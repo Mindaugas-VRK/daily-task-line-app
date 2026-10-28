@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily Task Line</title>
+<meta name="theme-color" content="#2348c9">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tasks">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="config.js"></script>
+<style>
+/* Layout: one narrow column of ruled lines, like a pocket task pad; rank number + handle on the left, status chips on the right. */
+:root {
+  --bg: #eef1f5;
+  --paper: #fbfcfe;
+  --ink: #18212e;
+  --muted: #5d6878;
+  --rule: #d6dce5;
+  --accent: #2348c9;
+  --accent-soft: #e3e9fb;
+  --warn: #a35c00;
+  --warn-soft: #fbefd9;
+  --bad: #b3261e;
+  --bad-soft: #fbe3e1;
+  --good: #1d7a46;
+  --good-soft: #def3e6;
+  --shadow: 0 10px 30px rgba(24, 33, 46, .16);
+  --f-display: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141b; --paper: #171d27; --ink: #e6ebf3; --muted: #95a0b2; --rule: #2a3343;
+    --accent: #8aa6ff; --accent-soft: #1f2a48; --warn: #f0b45a; --warn-soft: #3a2b12;
+    --bad: #ff8b82; --bad-soft: #42201e; --good: #6fd39a; --good-soft: #16352a;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .5); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141b; --paper: #171d27; --ink: #e6ebf3; --muted: #95a0b2; --rule: #2a3343;
+  --accent: #8aa6ff; --accent-soft: #1f2a48; --warn: #f0b45a; --warn-soft: #3a2b12;
+  --bad: #ff8b82; --bad-soft: #42201e; --good: #6fd39a; --good-soft: #16352a;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .5); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 64px;
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: 30px; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+.today { font-family: var(--f-mono); font-size: 13px; color: var(--muted); }
+.counts { font-family: var(--f-mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.counts b { color: var(--ink); font-weight: 500; }
+
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Workspaces */
+.spaces { display: flex; align-items: flex-end; gap: 4px 2px; flex-wrap: wrap; border-bottom: 1px solid var(--rule); }
+.space { border: 0; background: none; padding: 9px 14px 8px; font-family: var(--f-display); font-weight: 700; font-size: 17px; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 7px; }
+.space:hover { color: var(--ink); }
+.space[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.badge { font-family: var(--f-mono); font-size: 11px; font-weight: 500; background: var(--bad); color: var(--paper); border-radius: 999px; padding: 0 6px; line-height: 17px; }
+.space-tools { margin-left: auto; display: flex; gap: 2px; padding-bottom: 6px; }
+.space-tools button { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 4px 8px; border-radius: 6px; }
+.space-tools button:hover { background: var(--accent-soft); }
+.space-form { margin-left: auto; display: flex; gap: 6px; padding-bottom: 6px; flex-wrap: wrap; min-width: 0; }
+.space-form input { border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); padding: 7px 10px; min-width: 0; flex: 1 1 160px; }
+.space-form .btn { padding: 7px 12px; }
+
+/* Reminders */
+.reminders { display: flex; flex-direction: column; gap: 8px; }
+.rem { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--ink); }
+.rem.bad { background: var(--bad-soft); }
+.rem.now { background: var(--accent-soft); }
+.rem .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
+.rem.bad .dot { background: var(--bad); }
+.rem.now .dot { background: var(--accent); animation: pulse 1.6s infinite; }
+.rem .txt { flex: 1; min-width: 0; }
+.rem .txt strong { font-weight: 600; }
+.rem button { background: none; border: 0; color: var(--muted); font-size: 13px; padding: 4px 6px; }
+@keyframes pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .rem.now .dot { animation: none; } }
+
+/* Add */
+form.add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto auto; gap: 6px; align-items: center; background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 6px; }
+form.add input { min-width: 0; width: 100%; border: 0; background: transparent; padding: 10px; font-size: 16px; }
+form.add .f-topic { border-right: 1px solid var(--rule); border-radius: 0; }
+form.add .f-due { border-left: 1px solid var(--rule); border-radius: 0; font-family: var(--f-mono); font-size: 14px; color: var(--muted); width: auto; }
+@media (max-width: 560px) {
+  form.add { grid-template-columns: minmax(0, 1fr) auto; }
+  form.add .f-title { grid-column: 1 / -1; grid-row: 1; border-bottom: 1px solid var(--rule); }
+  form.add .f-topic { grid-column: 1 / -1; border-right: 0; border-bottom: 1px solid var(--rule); }
+  form.add .f-due { border-left: 0; }
+}
+form.add input:focus { outline: none; }
+form.add:focus-within { border-color: var(--accent); }
+.btn { border: 0; border-radius: 8px; padding: 9px 14px; font-weight: 600; background: var(--accent); color: var(--paper); }
+.btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--rule); font-weight: 500; }
+.btn.danger { background: var(--bad); color: var(--paper); }
+
+/* List */
+.sheet { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+.sheet-head { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 600; }
+ol.tasks { list-style: none; margin: 0; padding: 0; }
+li.task { border-bottom: 1px solid var(--rule); background: var(--paper); position: relative; }
+li.task:last-child { border-bottom: 0; }
+li.task.dragging { z-index: 5; box-shadow: var(--shadow); border-radius: 8px; }
+.line { display: grid; grid-template-columns: auto auto auto 1fr auto; align-items: center; gap: 10px; padding: 10px 12px 10px 4px; }
+.handle { touch-action: none; border: 0; background: none; color: var(--muted); padding: 6px 4px; cursor: grab; display: flex; }
+.handle:active { cursor: grabbing; }
+.rank { font-family: var(--f-mono); font-size: 12px; color: var(--muted); width: 1.8em; text-align: right; font-variant-numeric: tabular-nums; }
+.check { appearance: none; width: 22px; height: 22px; border: 2px solid var(--muted); border-radius: 6px; margin: 0; cursor: pointer; display: grid; place-items: center; background: transparent; }
+.check:hover { border-color: var(--good); }
+.check:checked { background: var(--good); border-color: var(--good); }
+.check:checked::after { content: ""; width: 6px; height: 11px; border: solid var(--paper); border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px); }
+.body { min-width: 0; cursor: pointer; }
+.title { font-weight: 500; overflow-wrap: anywhere; }
+.desc { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chip { font-family: var(--f-mono); font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chip.bad { background: var(--bad-soft); color: var(--bad); }
+.chip.now { background: var(--accent-soft); color: var(--accent); }
+.chip.good { background: var(--good-soft); color: var(--good); }
+
+.chip.st-custom { background: transparent; border: 1px solid var(--rule); }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 1px 7px; border-radius: 4px; margin-right: 6px; vertical-align: 1px; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+.filters button { border: 1px solid var(--rule); background: transparent; border-radius: 999px; padding: 3px 10px; font-size: 13px; color: var(--muted); }
+.filters button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.field select { border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); padding: 8px 10px; width: 100%; min-width: 0; }
+
+.editor { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; padding: 4px 14px 16px 74px; }
+.editor .full { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field input, .field textarea { border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); padding: 8px 10px; width: 100%; min-width: 0; }
+.field textarea { min-height: 72px; resize: vertical; }
+.field .pair { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.field .pair input { flex: 1 1 110px; }
+.field .pair span { color: var(--muted); font-size: 13px; }
+.editor .actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
+.empty { padding: 28px 18px; color: var(--muted); text-align: center; }
+.empty strong { color: var(--ink); display: block; font-family: var(--f-display); font-size: 18px; margin-bottom: 4px; }
+
+/* Archive */
+details.archive { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; }
+details.archive summary { padding: 12px 14px; cursor: pointer; list-style: none; display: flex; justify-content: space-between; }
+details.archive summary::-webkit-details-marker { display: none; }
+details.archive summary::after { content: "Show"; color: var(--accent); font-size: 13px; }
+details.archive[open] summary::after { content: "Hide"; }
+details.archive[open] summary { border-bottom: 1px solid var(--rule); }
+.arch { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+.arch:last-child { border-bottom: 0; }
+.arch .title { text-decoration: line-through; color: var(--muted); }
+.arch .when { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.arch .ops { display: flex; gap: 6px; }
+.arch .ops button { font-size: 13px; padding: 5px 10px; }
+
+.note { font-size: 12px; color: var(--muted); text-align: center; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--paper); padding: 10px 14px; border-radius: 10px; display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); z-index: 20; max-width: calc(100% - 32px); }
+.toast button { background: none; border: 0; color: var(--accent-soft); font-weight: 600; }
+
+@media (max-width: 560px) {
+  .line { grid-template-columns: auto auto 1fr; grid-template-areas: "h c b" "h c x"; row-gap: 4px; }
+  .line .handle { grid-area: h; } .line .rank { display: none; } .line .check { grid-area: c; } .line .body { grid-area: b; } .line .chips { grid-area: x; justify-content: flex-start; }
+  .editor { grid-template-columns: 1fr; padding-left: 14px; }
+  h1 { font-size: 26px; }
+}
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-height: 100vh; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Sync status for the open workspace */
+.sync { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: -8px; }
+.sync .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.sync.ok .dot { background: var(--good); }
+.sync.busy .dot { background: var(--accent); animation: pulse 1.2s infinite; }
+.sync.auth, .sync.error { background: var(--warn-soft); color: var(--ink); padding: 8px 12px; border-radius: 10px; margin-top: 0; }
+.sync.auth .dot, .sync.error .dot { background: var(--warn); }
+.linkbtn { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 2px 4px; text-decoration: underline; text-underline-offset: 2px; }
+.sync .btn { padding: 5px 12px; font-size: 13px; }
+
+/* Workspace settings */
+.panel { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.panel h2 { font-family: var(--f-display); font-size: 19px; margin: 0; }
+.panel .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.panel .row input[type="text"] { border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); padding: 8px 10px; flex: 1 1 200px; min-width: 0; }
+.choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.choice label { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; cursor: pointer; display: flex; gap: 10px; align-items: flex-start; }
+.choice label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.choice input { margin-top: 3px; accent-color: var(--accent); }
+.choice small { display: block; color: var(--muted); font-size: 12px; }
+.panel .hint { font-size: 13px; color: var(--muted); margin: 0; }
+.panel .danger-zone { border-top: 1px solid var(--rule); padding-top: 14px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 560px) { .choice { grid-template-columns: 1fr; } .sheet-head .label:last-child { display: none; } }
+
+/* Custom fields */
+.xfields { display: flex; flex-direction: column; gap: 6px; }
+.xrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto; gap: 6px; }
+.xrow input { border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); padding: 8px 10px; min-width: 0; width: 100%; }
+.xrow button { border: 0; background: none; color: var(--muted); font-size: 18px; width: 32px; border-radius: 8px; }
+.xrow button:hover { background: var(--bad-soft); color: var(--bad); }
+.field > .linkbtn { align-self: flex-start; padding-left: 0; }
+
+.note { display: flex; gap: 6px 14px; justify-content: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Daily Task Line</h1>
+      <div class="today" id="today"></div>
+    </div>
+    <div class="counts" id="counts"></div>
+  </header>
+
+  <nav class="spaces" id="spaces" aria-label="Workspaces"></nav>
+  <div class="sync" id="sync" aria-live="polite"></div>
+  <section class="panel" id="settings" hidden></section>
+
+  <div class="reminders" id="reminders" aria-live="polite"></div>
+
+  <form class="add" id="addForm" autocomplete="off">
+    <input id="newTopic" class="f-topic" list="topicList" placeholder="Category" aria-label="Category">
+    <input id="newTitle" class="f-title" placeholder="Task name" aria-label="Task name">
+    <input id="newDue" class="f-due" type="date" aria-label="Due date" title="Due date">
+    <button class="btn" type="submit">Add</button>
+  </form>
+
+  <section class="sheet" aria-labelledby="openLabel">
+    <div class="sheet-head"><span class="label" id="openLabel">Open · top line is top priority</span><span class="label">Drag ⠿ to reorder</span></div>
+    <div class="filters" id="filters" hidden></div>
+    <ol class="tasks" id="list"></ol>
+  </section>
+  <datalist id="topicList"></datalist>
+  <datalist id="fieldLabels"></datalist>
+
+  <details class="archive" id="archive">
+    <summary><span class="label" id="archLabel">Archived</span></summary>
+    <div id="archList"></div>
+  </details>
+
+  <p class="note">
+    <button type="button" class="linkbtn" id="notifyBtn" hidden></button>
+    <button type="button" class="linkbtn" id="installBtn" hidden>Install app</button>
+  </p>
+</div>
+<div class="toast" id="toast" hidden><span id="toastMsg"></span><button id="toastUndo" type="button">Undo</button></div>
+
+<script>
+(() => {
+  const CFG = window.DTL_CONFIG || {};
+  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const pad = (n) => String(n).padStart(2, "0");
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const HANDLE = '<svg width="14" height="18" viewBox="0 0 14 18" aria-hidden="true"><g fill="currentColor"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="9" r="1.6"/><circle cx="10" cy="9" r="1.6"/><circle cx="4" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.6"/></g></svg>';
+
+  // ---------- device storage ----------
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  };
+  const K = { spaces: "dtl.spaces", def: "dtl.default", data: (id) => "dtl.data." + id, token: (id) => "dtl.token." + id, notified: "dtl.notified" };
+
+  // Workspace list lives on each device; each workspace's tasks live on the device or in its own Google Drive.
+  let spaces = LS.get(K.spaces, null) || [
+    { id: "personal", name: "Personal", storage: "local" },
+    { id: "softeta", name: "Softeta", storage: "local" },
+  ];
+  const resolveDefault = (pref) => (spaces.some((s) => s.id === pref) ? pref : (spaces.find((s) => /^personal$/i.test(s.name.trim())) || spaces[0]).id);
+  let defaultWs = resolveDefault(LS.get(K.def, null));
+  let activeWs = defaultWs;
+  const data = {};
+  const loadData = (id) => (data[id] = LS.get(K.data(id), null) || { tasks: [], syncedAt: 0 });
+  spaces.forEach((s) => loadData(s.id));
+  const saveSpaces = () => { LS.set(K.spaces, spaces); LS.set(K.def, defaultWs); };
+  const saveData = (id) => LS.set(K.data(id), data[id]);
+  const wsById = (id) => spaces.find((s) => s.id === id);
+
+  let openId = null;
+  let topicFilter = null;
+  let dragging = null;
+  let pendingRender = false;
+  let settingsOpen = false;
+  let wsEdit = null; // null | "new"
+  const dismissed = new Set();
+  const DEFAULT_STATUSES = ["Pending", "In progress", "Blocked"];
+  const STATUS_CLS = { "pending": "", "in progress": "now", "blocked": "bad" };
+
+  // ---------- task store (active workspace) ----------
+  // Deleted tasks stay as tombstones so a deletion on one device reaches the others.
+  const live = (ws = activeWs) => (data[ws] ? data[ws].tasks.filter((t) => !t.deleted) : []);
+  function write(ws, mutate) {
+    const d = data[ws];
+    d.tasks = mutate(d.tasks);
+    saveData(ws);
+    render();
+    if (wsById(ws)?.storage === "gdrive") scheduleSync(ws);
+  }
+  const store = {
+    put(t) { t.updated = Date.now(); write(activeWs, (list) => list.filter((x) => x.id !== t.id).concat(t)); },
+    patch(id, f) { const now = Date.now(); write(activeWs, (list) => list.map((x) => (x.id === id ? { ...x, ...f, updated: now } : x))); },
+    remove(id) { const now = Date.now(); write(activeWs, (list) => list.map((x) => (x.id === id ? { id, deleted: true, updated: now } : x))); },
+  };
+
+  function merge(a, b) {
+    const map = new Map();
+    a.concat(b).forEach((t) => { const cur = map.get(t.id); if (!cur || (t.updated || 0) > (cur.updated || 0)) map.set(t.id, t); });
+    const cutoff = Date.now() - 30 * 864e5;
+    return [...map.values()].filter((t) => !(t.deleted && (t.updated || 0) < cutoff)).sort((x, y) => (x.id < y.id ? -1 : 1));
+  }
+
+  // ---------- Google Drive sync ----------
+  const syncState = {}; // ws id -> { status: "ok"|"busy"|"auth"|"error", msg, busy, again, timer }
+  const st = (id) => (syncState[id] ||= { status: "", msg: "" });
+  const tokenFor = (id) => { const t = LS.get(K.token(id), null); return t && t.exp > Date.now() + 60000 ? t.access_token : null; };
+
+  async function gfetch(id, url, opts = {}) {
+    const tok = tokenFor(id);
+    if (!tok) { const e = new Error("Sign in again"); e.auth = true; throw e; }
+    const res = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + tok } });
+    if (res.status === 401) { LS.set(K.token(id), null); const e = new Error("Sign in again"); e.auth = true; throw e; }
+    if (!res.ok) { const e = new Error("Google Drive answered " + res.status); e.status = res.status; throw e; }
+    return res;
+  }
+  const driveName = (ws) => `Daily Task Line – ${ws.name}.json`;
+  const wsKey = (ws) => ws.name.trim().toLowerCase().slice(0, 80);
+
+  async function findOrCreateFile(ws) {
+    if (ws.fileId) return ws.fileId;
+    const q = encodeURIComponent("appProperties has { key='dtl' and value='1' } and trashed=false");
+    const r = await (await gfetch(ws.id, `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,appProperties)`)).json();
+    const hit = (r.files || []).find((f) => (f.appProperties || {}).ws === wsKey(ws));
+    if (hit) { ws.fileId = hit.id; saveSpaces(); return hit.id; }
+    const boundary = "dtl" + uid();
+    const meta = { name: driveName(ws), mimeType: "application/json", appProperties: { dtl: "1", ws: wsKey(ws) } };
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ tasks: [] })}\r\n--${boundary}--`;
+    const f = await (await gfetch(ws.id, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+      method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + boundary }, body,
+    })).json();
+    ws.fileId = f.id; saveSpaces();
+    return f.id;
+  }
+
+  async function syncWs(id) {
+    const ws = wsById(id);
+    if (!ws || ws.storage !== "gdrive") return;
+    const s = st(id);
+    if (s.busy) { s.again = true; return; }
+    if (!tokenFor(id)) { s.status = "auth"; renderSync(); return; }
+    s.busy = true; s.status = "busy"; renderSync();
+    try {
+      let fileId = await findOrCreateFile(ws);
+      let remote;
+      try {
+        remote = await (await gfetch(id, `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`)).json();
+      } catch (e) {
+        if (e.status !== 404) throw e;
+        ws.fileId = null; fileId = await findOrCreateFile(ws); remote = { tasks: [] };
+      }
+      const remoteTasks = Array.isArray(remote && remote.tasks) ? remote.tasks : [];
+      const merged = merge(data[id].tasks, remoteTasks);
+      if (JSON.stringify(merged) !== JSON.stringify(merge(remoteTasks, []))) {
+        await gfetch(id, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ app: "Daily Task Line", workspace: ws.name, tasks: merged }),
+        });
+      }
+      data[id].tasks = merge(data[id].tasks, merged); // keeps edits made while this ran
+      data[id].syncedAt = Date.now();
+      saveData(id);
+      s.status = "ok"; s.msg = "";
+    } catch (e) {
+      s.status = e.auth ? "auth" : "error";
+      s.msg = e.auth ? "" : (e.message || "Sync failed");
+    } finally {
+      s.busy = false;
+      render();
+      if (s.again) { s.again = false; syncWs(id); }
+    }
+  }
+  function scheduleSync(id) {
+    const s = st(id);
+    clearTimeout(s.timer);
+    s.timer = setTimeout(() => syncWs(id), 1500);
+  }
+  const syncAll = () => spaces.forEach((ws) => { if (ws.storage === "gdrive" && tokenFor(ws.id)) syncWs(ws.id); });
+
+  // switching = the person chose Switch account; otherwise only the linked account is accepted.
+  function connectGoogle(id, switching = false) {
+    const ws = wsById(id);
+    if (!CFG.googleClientId) { toast("Google sign-in isn't set up yet: add your Client ID to config.js (SETUP.md, step 2).", null); return; }
+    if (!(window.google && google.accounts && google.accounts.oauth2)) { toast("Google sign-in is still loading. Try again in a moment.", null); return; }
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: CFG.googleClientId,
+      scope: DRIVE_SCOPE + " openid email",
+      login_hint: (!switching && ws.email) || undefined,
+      prompt: ws.email && !switching ? "" : "select_account",
+      callback: async (resp) => {
+        if (resp.error) { toast("Google sign-in didn't finish: " + resp.error, null); return; }
+        if (!google.accounts.oauth2.hasGrantedAllScopes(resp, DRIVE_SCOPE)) {
+          // Google lets people untick single permissions; without this one there is nothing to sync to.
+          toast("Google didn't give access to Drive files. In the Google window, tick the box for Google Drive files (“…only the specific Google Drive files you use with this app”), then Continue.",
+            () => connectGoogle(id, switching), "Try again");
+          return;
+        }
+        LS.set(K.token(id), { access_token: resp.access_token, exp: Date.now() + (Number(resp.expires_in) || 3600) * 1000 });
+        let me = {};
+        try { me = await (await gfetch(id, "https://www.googleapis.com/oauth2/v3/userinfo")).json(); } catch (e) {}
+        if (!me.email) { LS.set(K.token(id), null); toast("Couldn't read which Google account signed in. Try again.", null); return; }
+        if (ws.email && me.email !== ws.email && !switching) {
+          LS.set(K.token(id), null);
+          google.accounts.oauth2.revoke(resp.access_token, () => {});
+          toast(`${ws.name} is linked to ${ws.email}, but you signed in as ${me.email}. Sign in with ${ws.email}, or use Settings → Switch account.`, null);
+          render();
+          return;
+        }
+        if (ws.email !== me.email) ws.fileId = null; // another account keeps its own file
+        ws.email = me.email;
+        ws.storage = "gdrive";
+        saveSpaces();
+        toast(`${ws.name} now syncs with Google Drive (${ws.email || "connected"}).`, null);
+        syncWs(id);
+      },
+      error_callback: (err) => { if (err && err.type !== "popup_closed") toast("Google sign-in didn't open. Allow pop-ups for this site and try again.", null); },
+    });
+    client.requestAccessToken();
+  }
+
+  function useDeviceOnly(id) {
+    const ws = wsById(id);
+    const tok = tokenFor(id);
+    if (tok && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(tok, () => {});
+    LS.set(K.token(id), null);
+    ws.storage = "local"; ws.email = ""; ws.fileId = null;
+    saveSpaces();
+    toast(`${ws.name} is now saved on this device only. The file in Google Drive stays where it is.`, null);
+    render();
+  }
+
+  async function renameRemote(ws) {
+    if (ws.storage !== "gdrive" || !ws.fileId || !tokenFor(ws.id)) return;
+    try {
+      await gfetch(ws.id, `https://www.googleapis.com/drive/v3/files/${ws.fileId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: driveName(ws), appProperties: { dtl: "1", ws: wsKey(ws) } }),
+      });
+    } catch (e) {}
+  }
+
+  // ---------- status logic ----------
+  function status(t, now) {
+    const today = ymd(now), time = hm(now);
+    const out = [];
+    if (t.due) {
+      if (t.due < today) out.push({ cls: "bad", text: "Overdue " + fmtDate(t.due), rem: "is overdue (due " + fmtDate(t.due) + ")", level: "bad" });
+      else if (t.due === today) out.push({ cls: "warn", text: "Due today", rem: "is due today", level: "warn" });
+      else out.push({ cls: "", text: "Due " + fmtDate(t.due) });
+    }
+    // Next action: one date, an optional time (naFrom), and what to do (naNote).
+    if (t.naDate) {
+      const at = t.naFrom || "";
+      const what = t.naNote ? ": " + t.naNote : "";
+      if (t.naDate < today) {
+        out.push({ cls: "bad", text: "Next action missed", rem: `missed its next action (${fmtDate(t.naDate)}${at ? " " + at : ""})${what}`, level: "bad" });
+      } else if (t.naDate === today && (!at || time >= at)) {
+        out.push({ cls: "now", text: at ? "Act now" : "Act today", rem: `needs its next action ${at ? "now" : "today"}${what}`, level: "now" });
+      } else if (t.naDate === today) {
+        out.push({ cls: "", text: "Act at " + at });
+      } else {
+        out.push({ cls: "", text: "Act " + fmtDate(t.naDate) + (at ? " " + at : "") });
+      }
+    }
+    return out;
+  }
+  function fmtDate(s) {
+    const [y, m, d] = s.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    const now = new Date();
+    const diff = Math.round((dt - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 864e5);
+    if (diff === 0) return "today";
+    if (diff === 1) return "tomorrow";
+    if (diff === -1) return "yesterday";
+    return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(y !== now.getFullYear() ? { year: "numeric" } : {}) });
+  }
+
+  // ---------- derived lists ----------
+  const openTasks = (ws) => live(ws).filter((t) => !t.done).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const doneTasks = () => live().filter((t) => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+  const visibleOpen = () => openTasks().filter((t) => !topicFilter || (t.topic || "").toLowerCase() === topicFilter.toLowerCase());
+  // Categories, statuses and field names are remembered from saved tasks, archived ones included.
+  function distinct(values) {
+    const seen = new Map();
+    values.forEach((v) => { v = (v || "").trim(); if (v && !seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v); });
+    return [...seen.values()];
+  }
+  const allTopics = () => distinct(live().map((t) => t.topic)).sort((a, b) => a.localeCompare(b));
+  const allStatuses = () => distinct(DEFAULT_STATUSES.concat(...spaces.map((s) => live(s.id).map((t) => t.status))));
+  const allFieldLabels = () => distinct([].concat(...live().map((t) => (t.fields || []).map((f) => f.label)))).sort((a, b) => a.localeCompare(b));
+  const statusOf = (t) => (t.status || "").trim() || "Pending";
+  const canonical = (v, list) => list.find((x) => x.toLowerCase() === v.toLowerCase()) || v;
+  const filledFields = (t) => (t.fields || []).filter((f) => (f.label || "").trim() || (f.value || "").trim());
+
+  // ---------- render ----------
+  function renderSpaces(now) {
+    const ordered = spaces.filter((s) => s.id === defaultWs).concat(spaces.filter((s) => s.id !== defaultWs));
+    const tabs = ordered.map((s) => {
+      const alerts = openTasks(s.id).filter((t) => status(t, now).some((x) => x.level === "bad" || x.level === "now")).length;
+      return `<button type="button" class="space" data-ws="${esc(s.id)}" aria-pressed="${s.id === activeWs}">${esc(s.name)}${alerts ? `<span class="badge" title="${alerts} need attention">${alerts}</span>` : ""}</button>`;
+    }).join("");
+    const tools = wsEdit
+      ? `<form class="space-form" id="wsForm"><input id="wsName" placeholder="New workspace name" aria-label="New workspace name"><button class="btn" type="submit">Create</button><button class="btn ghost" type="button" data-ws-cancel>Cancel</button></form>`
+      : `<span class="space-tools"><button type="button" data-ws-new>+ Workspace</button><button type="button" data-ws-settings aria-expanded="${settingsOpen}">Settings</button></span>`;
+    $("spaces").innerHTML = tabs + tools;
+  }
+
+  function renderSync() {
+    const ws = wsById(activeWs);
+    const el = $("sync");
+    if (ws.storage !== "gdrive") {
+      el.className = "sync";
+      el.innerHTML = `<span class="dot"></span><span>Saved on this device only.</span><button type="button" class="linkbtn" data-connect>Sync with Google Drive</button>`;
+      return;
+    }
+    const s = st(activeWs);
+    const who = esc(ws.email || "Google account");
+    const synced = data[activeWs].syncedAt ? "Synced " + new Date(data[activeWs].syncedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "Not synced yet";
+    const state = s.status || (tokenFor(activeWs) ? "ok" : "auth");
+    el.className = "sync " + state;
+    if (state === "auth") el.innerHTML = `<span class="dot"></span><span>Google Drive · ${who} · Sign in again to sync. Changes are kept on this device until then.</span><button type="button" class="btn" data-connect>Reconnect</button>`;
+    else if (state === "error") el.innerHTML = `<span class="dot"></span><span>Couldn't sync with Google Drive (${esc(s.msg)}). Changes are kept on this device.</span><button type="button" class="btn" data-sync-now>Try again</button>`;
+    else if (state === "busy") el.innerHTML = `<span class="dot"></span><span>Google Drive · ${who} · Syncing…</span>`;
+    else el.innerHTML = `<span class="dot"></span><span>Google Drive · ${who} · ${synced}</span>`;
+  }
+
+  function renderSettings() {
+    const el = $("settings");
+    el.hidden = !settingsOpen;
+    if (!settingsOpen) return;
+    const ws = wsById(activeWs);
+    const count = live().length;
+    const isDrive = ws.storage === "gdrive";
+    el.innerHTML = `
+      <h2>${esc(ws.name)} settings</h2>
+      <form class="row" id="renameForm"><input type="text" id="setName" value="${esc(ws.name)}" aria-label="Workspace name"><button class="btn ghost" type="submit">Rename</button></form>
+      <div class="field"><span class="label">Where tasks are saved</span>
+        <div class="choice">
+          <label><input type="radio" name="storage" id="stLocal" value="local"${isDrive ? "" : " checked"}><span>This device only<small>Works offline. Other devices can't see these tasks.</small></span></label>
+          <label><input type="radio" name="storage" id="stDrive" value="gdrive"${isDrive ? " checked" : ""}><span>Google Drive${isDrive && ws.email ? ` · ${esc(ws.email)}` : ""}<small>Pick the Google account for this workspace. Open the app on any device and connect the same account to see these tasks.</small></span></label>
+        </div>
+      </div>
+      ${isDrive ? `<p class="hint">Saved as “${esc(driveName(ws))}” in that account's Google Drive. <button type="button" class="linkbtn" data-connect>Switch account</button></p>` : ""}
+      <div class="row">${ws.id === defaultWs ? `<span class="hint">This workspace opens first.</span>` : `<button class="btn ghost" type="button" data-ws-default>Open this workspace first</button>`}</div>
+      <div class="danger-zone">
+        <button class="btn ghost" type="button" data-ws-delete ${spaces.length < 2 ? "disabled" : ""}>Remove workspace</button>
+        <button class="btn" type="button" data-settings-close>Done</button>
+      </div>
+      <p class="hint" id="deleteHint" hidden>${isDrive
+        ? `Removes ${esc(ws.name)} from this device. The file in Google Drive and its ${count} tasks stay. Click again to confirm.`
+        : `Deletes ${esc(ws.name)} and its ${count} tasks from this device. Click again to confirm.`}</p>`;
+  }
+
+  function render() {
+    if (dragging) { pendingRender = true; return; }
+    // keep the cursor where it was when the list redraws under an open editor
+    const active = document.activeElement;
+    const focusId = active && active.id && active.closest && active.closest("#list") ? active.id : null;
+    let sel = null;
+    try { sel = [active.selectionStart, active.selectionEnd]; } catch (e) {}
+
+    const now = new Date();
+    $("today").textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    renderSpaces(now);
+    renderSync();
+    if (!settingsOpen || document.activeElement?.id !== "setName") renderSettings();
+
+    const allOpen = openTasks(), done = doneTasks();
+    const allStats = allOpen.map((t) => status(t, now));
+    const attention = allStats.filter((s) => s.some((x) => x.level === "bad")).length;
+    $("counts").innerHTML = `<b>${allOpen.length}</b> open · <b>${attention}</b> need attention · <b>${done.length}</b> archived`;
+
+    const topics = allTopics();
+    if (topicFilter && !topics.some((x) => x.toLowerCase() === topicFilter.toLowerCase())) topicFilter = null;
+    $("topicList").innerHTML = topics.map((x) => `<option value="${esc(x)}"></option>`).join("");
+    $("fieldLabels").innerHTML = allFieldLabels().map((x) => `<option value="${esc(x)}"></option>`).join("");
+    $("filters").hidden = !topics.length;
+    $("filters").innerHTML = `<button type="button" data-topic="" aria-pressed="${!topicFilter}">All</button>` +
+      topics.map((x) => `<button type="button" data-topic="${esc(x)}" aria-pressed="${topicFilter === x}">${esc(x)}</button>`).join("");
+
+    const rems = [];
+    allOpen.forEach((t, i) => allStats[i].forEach((s) => { if (s.rem && !dismissed.has(t.id + s.level)) rems.push({ t, s }); }));
+    const rank = { now: 0, bad: 1, warn: 2 };
+    rems.sort((a, b) => rank[a.s.level] - rank[b.s.level]);
+    $("reminders").innerHTML = rems.slice(0, 5).map(({ t, s }) =>
+      `<div class="rem ${s.level}"><span class="dot"></span><span class="txt"><strong>${esc(t.title)}</strong> ${esc(s.rem)}</span><button type="button" data-dismiss="${esc(t.id + s.level)}">Dismiss</button></div>`
+    ).join("");
+
+    const list = $("list");
+    const open = visibleOpen();
+    const stats = open.map((t) => status(t, now));
+    if (!open.length) {
+      list.innerHTML = topicFilter
+        ? `<li class="empty"><strong>No open tasks for ${esc(topicFilter)}</strong>Tasks you add now get this category. Choose All to see everything.</li>`
+        : `<li class="empty"><strong>Nothing on the line</strong>Fill in a category, task name and due date above, then press Enter. Click any line to add a status, next-action window, notes and your own fields.</li>`;
+    } else {
+      list.innerHTML = open.map((t, i) => {
+        const st = statusOf(t);
+        const stCls = STATUS_CLS[st.toLowerCase()] ?? "st-custom";
+        const chips = `<span class="chip ${stCls}">${esc(st)}</span>` + stats[i].map((s) => `<span class="chip ${s.cls}">${esc(s.text)}</span>`).join("");
+        const isOpen = openId === t.id;
+        const sub = [t.naNote && "Next: " + t.naNote, t.desc].concat(filledFields(t).map((f) => (f.label ? `${f.label}: ${f.value || "—"}` : f.value))).filter(Boolean).join(" · ");
+        return `<li class="task" data-id="${esc(t.id)}">
+          <div class="line">
+            <button class="handle" type="button" aria-label="Move ${esc(t.title)}. Use arrow keys to change priority">${HANDLE}</button>
+            <span class="rank">${i + 1}</span>
+            <input class="check" type="checkbox" id="chk-${esc(t.id)}" aria-label="Mark ${esc(t.title)} done">
+            <div class="body" role="button" tabindex="0" aria-expanded="${isOpen}">
+              <div class="title">${t.topic ? `<span class="tag">${esc(t.topic)}</span>` : ""}${esc(t.title)}</div>
+              ${sub && !isOpen ? `<div class="desc">${esc(sub)}</div>` : ""}
+            </div>
+            <div class="chips">${chips}</div>
+          </div>
+          ${isOpen ? editorHTML(t) : ""}
+        </li>`;
+      }).join("");
+    }
+
+    $("archLabel").textContent = `Archived · ${done.length}`;
+    $("archList").innerHTML = done.length ? done.map((t) => `
+      <div class="arch" data-id="${esc(t.id)}">
+        <input class="check" type="checkbox" checked id="arch-${esc(t.id)}" aria-label="Restore ${esc(t.title)}">
+        <div style="min-width:0"><div class="title">${t.topic ? `<span class="tag">${esc(t.topic)}</span>` : ""}${esc(t.title)}</div><div class="when">Done ${t.doneAt ? esc(new Date(t.doneAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })) : ""}</div></div>
+        <div class="ops"><button class="btn ghost" type="button" data-restore>Restore</button><button class="btn ghost" type="button" data-delete>Delete</button></div>
+      </div>`).join("") : `<div class="empty">Tick a task's box and it moves here.</div>`;
+
+    if (focusId) {
+      const el = $(focusId);
+      if (el && el !== document.activeElement) {
+        el.focus();
+        try { if (sel && sel[0] != null) el.setSelectionRange(sel[0], sel[1]); } catch (e) {}
+      }
+    }
+  }
+
+  function editorHTML(t) {
+    const id = esc(t.id);
+    const rows = (t.fields || []).map((f, i) => `
+      <div class="xrow">
+        <input id="xl-${id}-${i}" data-xl="${i}" list="fieldLabels" value="${esc(f.label || "")}" placeholder="Field name" aria-label="Field name">
+        <input id="xv-${id}-${i}" data-xv="${i}" value="${esc(f.value || "")}" placeholder="Value" aria-label="${esc(f.label || "Field")} value">
+        <button type="button" data-xdel="${i}" aria-label="Remove field ${esc(f.label || "")}">×</button>
+      </div>`).join("");
+    return `<div class="editor">
+      <label class="field full"><span class="label">Task</span><input id="ed-title-${id}" data-f="title" value="${esc(t.title)}"></label>
+      <label class="field"><span class="label">Category</span><input id="ed-topic-${id}" data-f="topic" list="topicList" value="${esc(t.topic || "")}" placeholder="Category"></label>
+      <div class="field"><label class="label" for="ed-status-${id}">Status</label>
+        <select id="ed-status-${id}" data-f="status">
+          ${allStatuses().map((s) => `<option${s === statusOf(t) ? " selected" : ""}>${esc(s)}</option>`).join("")}
+          <option value="__new">+ New status…</option>
+        </select>
+        <input id="ed-statusnew-${id}" data-newstatus placeholder="Type a new status, press Enter" aria-label="New status" hidden>
+      </div>
+      <label class="field"><span class="label">Due date</span><input type="date" id="ed-due-${id}" data-f="due" value="${esc(t.due || "")}"></label>
+      <div class="field"><span class="label">Next action</span>
+        <div class="pair">
+          <input type="date" id="ed-nad-${id}" data-f="naDate" value="${esc(t.naDate || "")}" aria-label="Next action date">
+          <input type="time" id="ed-naf-${id}" data-f="naFrom" value="${esc(t.naFrom || "")}" aria-label="Next action time">
+        </div>
+      </div>
+      <label class="field full"><span class="label">What to do next</span><input id="ed-nan-${id}" data-f="naNote" value="${esc(t.naNote || "")}" placeholder="e.g. Call Jonas about the quote"></label>
+      <label class="field full"><span class="label">Description</span><textarea id="ed-desc-${id}" data-f="desc" placeholder="Notes, links, what &quot;done&quot; looks like">${esc(t.desc || "")}</textarea></label>
+      <div class="field full"><span class="label">Your fields</span>
+        ${rows ? `<div class="xfields">${rows}</div>` : ""}
+        <button type="button" class="linkbtn" data-xadd>+ Add field</button>
+      </div>
+      <div class="actions"><button class="btn" type="button" data-close>Close</button></div>
+    </div>`;
+  }
+
+  // ---------- task actions ----------
+  $("addForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const title = $("newTitle").value.trim();
+    if (!title) { $("newTitle").focus(); return; }
+    const rawTopic = $("newTopic").value.trim();
+    const topic = rawTopic ? canonical(rawTopic, allTopics()) : "";
+    const open = openTasks();
+    const order = open.length ? (open[open.length - 1].order ?? 0) + 1 : 1;
+    store.put({ id: uid(), title, topic, status: "Pending", desc: "", due: $("newDue").value, naDate: "", naFrom: "", naNote: "", fields: [], order, done: false, doneAt: 0, created: Date.now() });
+    // keep the category so several tasks for one area go in quickly
+    $("newTitle").value = ""; $("newDue").value = "";
+    $("newTitle").focus();
+  });
+
+  function complete(id) {
+    if (openId === id) openId = null;
+    store.patch(id, { done: true, doneAt: Date.now() });
+    const t = live().find((x) => x.id === id);
+    toast(`Archived “${t ? t.title : "task"}”`, () => restore(id));
+  }
+  function restore(id) {
+    const open = openTasks();
+    const t = live().find((x) => x.id === id);
+    const order = t && t.order ? t.order : (open.length ? open[open.length - 1].order + 1 : 1);
+    store.patch(id, { done: false, doneAt: 0, order });
+  }
+  const fieldsOf = (id) => (live().find((x) => x.id === id)?.fields || []).map((f) => ({ ...f }));
+
+  $("list").addEventListener("change", (e) => {
+    const li = e.target.closest("li.task"); if (!li) return;
+    const id = li.dataset.id;
+    const tg = e.target;
+    if (tg.classList.contains("check")) { complete(id); return; }
+    if (tg.dataset.newstatus !== undefined) {
+      const v = tg.value.trim();
+      if (v) store.patch(id, { status: canonical(v, allStatuses()) });
+      return;
+    }
+    if (tg.dataset.xl !== undefined || tg.dataset.xv !== undefined) {
+      const fields = fieldsOf(id);
+      const i = Number(tg.dataset.xl ?? tg.dataset.xv);
+      if (!fields[i]) return;
+      if (tg.dataset.xl !== undefined) { const v = tg.value.trim(); fields[i].label = v && canonical(v, allFieldLabels()); }
+      else fields[i].value = tg.value;
+      store.patch(id, { fields });
+      return;
+    }
+    const f = tg.dataset.f;
+    if (f === "status" && tg.value === "__new") {
+      const box = li.querySelector("[data-newstatus]");
+      box.hidden = false; box.focus();
+      return;
+    }
+    if (f) {
+      let v = tg.value;
+      if (f === "title") { v = v.trim(); if (!v) { tg.value = live().find((x) => x.id === id)?.title || ""; return; } }
+      if (f === "topic") { v = v.trim(); v = v && canonical(v, allTopics()); }
+      store.patch(id, { [f]: v });
+    }
+  });
+  $("list").addEventListener("click", (e) => {
+    const li = e.target.closest("li.task"); if (!li) return;
+    const id = li.dataset.id;
+    if (e.target.closest(".body")) { openId = openId === id ? null : id; render(); return; }
+    if (e.target.closest("[data-close]")) {
+      // drop field rows left completely empty
+      const fields = fieldsOf(id), kept = fields.filter((f) => (f.label || "").trim() || (f.value || "").trim());
+      openId = null;
+      if (kept.length !== fields.length) store.patch(id, { fields: kept }); else render();
+      return;
+    }
+    if (e.target.closest("[data-xadd]")) {
+      const fields = fieldsOf(id);
+      fields.push({ label: "", value: "" });
+      store.patch(id, { fields });
+      $(`xl-${id}-${fields.length - 1}`)?.focus();
+      return;
+    }
+    const del = e.target.closest("[data-xdel]");
+    if (del) {
+      const fields = fieldsOf(id);
+      fields.splice(Number(del.dataset.xdel), 1);
+      store.patch(id, { fields });
+    }
+  });
+  $("list").addEventListener("keydown", (e) => {
+    const body = e.target.closest(".body");
+    if (body && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); body.click(); return; }
+    const h = e.target.closest(".handle");
+    if (h && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      const id = h.closest("li").dataset.id;
+      const open = visibleOpen();
+      const i = open.findIndex((t) => t.id === id);
+      const j = e.key === "ArrowUp" ? i - 1 : i + 1;
+      if (j < 0 || j >= open.length) return;
+      const ids = open.map((t) => t.id);
+      ids.splice(i, 1); ids.splice(j, 0, id);
+      reorder(id, ids);
+      requestAnimationFrame(() => document.querySelector(`li.task[data-id="${CSS.escape(id)}"] .handle`)?.focus());
+    }
+  });
+
+  $("archList").addEventListener("click", (e) => {
+    const row = e.target.closest(".arch"); if (!row) return;
+    const id = row.dataset.id;
+    if (e.target.closest("[data-restore]")) restore(id);
+    const del = e.target.closest("[data-delete]");
+    if (del) {
+      if (del.dataset.armed) { store.remove(id); return; }
+      del.dataset.armed = "1"; del.textContent = "Confirm delete"; del.className = "btn danger";
+      setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = "Delete"; del.className = "btn ghost"; } }, 3000);
+    }
+  });
+  $("archList").addEventListener("change", (e) => {
+    if (e.target.classList.contains("check") && !e.target.checked) restore(e.target.closest(".arch").dataset.id);
+  });
+  $("filters").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-topic]"); if (!b) return;
+    topicFilter = b.dataset.topic || null; openId = null;
+    $("newTopic").value = topicFilter || "";
+    render();
+  });
+  $("reminders").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-dismiss]"); if (!b) return;
+    dismissed.add(b.dataset.dismiss); render();
+  });
+
+  // Only the moved task gets a new order value: the midpoint between its new neighbours.
+  function reorder(id, ids) {
+    const byId = Object.fromEntries(live().map((t) => [t.id, t]));
+    const k = ids.indexOf(id);
+    const prev = byId[ids[k - 1]], next = byId[ids[k + 1]];
+    let order;
+    if (prev && next) order = (prev.order + next.order) / 2;
+    else if (prev) order = prev.order + 1;
+    else if (next) order = next.order - 1;
+    else return;
+    store.patch(id, { order });
+  }
+
+  // ---------- pointer drag (mouse + touch) ----------
+  $("list").addEventListener("pointerdown", (e) => {
+    const h = e.target.closest(".handle"); if (!h || e.button > 0) return;
+    e.preventDefault();
+    const li = h.closest("li.task");
+    const r = li.getBoundingClientRect();
+    dragging = { li, id: li.dataset.id, grab: e.clientY - r.top, pointer: e.pointerId };
+    h.setPointerCapture(e.pointerId);
+    li.classList.add("dragging");
+  });
+  $("list").addEventListener("pointermove", (e) => {
+    if (!dragging || e.pointerId !== dragging.pointer) return;
+    const li = dragging.li;
+    li.style.transform = "";
+    const y = e.clientY;
+    let prev = li.previousElementSibling, next = li.nextElementSibling;
+    while (prev && y - dragging.grab < prev.getBoundingClientRect().top + prev.offsetHeight / 2) { li.parentNode.insertBefore(li, prev); prev = li.previousElementSibling; }
+    while (next && y - dragging.grab + li.offsetHeight > next.getBoundingClientRect().top + next.offsetHeight / 2) { li.parentNode.insertBefore(next, li); next = li.nextElementSibling; }
+    const top = li.getBoundingClientRect().top;
+    li.style.transform = `translateY(${y - dragging.grab - top}px)`;
+  });
+  const endDrag = (e) => {
+    if (!dragging || e.pointerId !== dragging.pointer) return;
+    const { li, id } = dragging;
+    li.classList.remove("dragging"); li.style.transform = "";
+    const ids = [...$("list").querySelectorAll("li.task")].map((x) => x.dataset.id);
+    const before = visibleOpen().map((t) => t.id).join();
+    dragging = null;
+    if (ids.join() !== before) reorder(id, ids);
+    else if (pendingRender) render();
+    pendingRender = false;
+  };
+  $("list").addEventListener("pointerup", endDrag);
+  $("list").addEventListener("pointercancel", endDrag);
+
+  // ---------- workspaces ----------
+  function switchSpace(id) {
+    activeWs = id; topicFilter = null; openId = null; wsEdit = null;
+    $("newTopic").value = "";
+    render();
+    syncWs(id);
+  }
+  $("spaces").addEventListener("click", (e) => {
+    const tab = e.target.closest("[data-ws]");
+    if (tab) { switchSpace(tab.dataset.ws); return; }
+    if (e.target.closest("[data-ws-new]")) { wsEdit = "new"; render(); $("wsName")?.focus(); }
+    else if (e.target.closest("[data-ws-cancel]")) { wsEdit = null; render(); }
+    else if (e.target.closest("[data-ws-settings]")) { settingsOpen = !settingsOpen; render(); }
+  });
+  $("spaces").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("wsName").value.trim();
+    if (!name) { $("wsName").focus(); return; }
+    if (spaces.some((s) => s.name.trim().toLowerCase() === name.toLowerCase())) { toast(`There's already a workspace called ${name}.`, null); return; }
+    const id = "ws-" + uid();
+    spaces.push({ id, name, storage: "local" });
+    data[id] = { tasks: [], syncedAt: 0 };
+    saveSpaces(); saveData(id);
+    settingsOpen = true; // next: choose where it's saved
+    switchSpace(id);
+  });
+  $("spaces").addEventListener("keydown", (e) => { if (e.key === "Escape" && wsEdit) { wsEdit = null; render(); } });
+
+  $("sync").addEventListener("click", (e) => {
+    if (e.target.closest("[data-connect]")) connectGoogle(activeWs);
+    if (e.target.closest("[data-sync-now]")) syncWs(activeWs);
+  });
+
+  $("settings").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ws = wsById(activeWs);
+    const name = $("setName").value.trim();
+    if (!name || name === ws.name) return;
+    if (spaces.some((s) => s !== ws && s.name.trim().toLowerCase() === name.toLowerCase())) { toast(`There's already a workspace called ${name}.`, null); return; }
+    ws.name = name; saveSpaces();
+    $("setName").blur();
+    render();
+    await renameRemote(ws);
+  });
+  $("settings").addEventListener("change", (e) => {
+    if (e.target.name !== "storage") return;
+    const ws = wsById(activeWs);
+    if (e.target.value === "gdrive" && ws.storage !== "gdrive") { e.target.checked = false; $("stLocal").checked = true; connectGoogle(activeWs); }
+    if (e.target.value === "local" && ws.storage === "gdrive") useDeviceOnly(activeWs);
+  });
+  $("settings").addEventListener("click", (e) => {
+    if (e.target.closest("[data-connect]")) { connectGoogle(activeWs, true); return; }
+    if (e.target.closest("[data-settings-close]")) { settingsOpen = false; render(); return; }
+    if (e.target.closest("[data-ws-default]")) { defaultWs = activeWs; saveSpaces(); render(); return; }
+    const del = e.target.closest("[data-ws-delete]");
+    if (del) {
+      if (!del.dataset.armed) {
+        del.dataset.armed = "1"; del.textContent = "Confirm remove"; del.className = "btn danger";
+        $("deleteHint").hidden = false;
+        return;
+      }
+      const id = activeWs;
+      LS.set(K.data(id), null); LS.set(K.token(id), null);
+      spaces = spaces.filter((s) => s.id !== id);
+      delete data[id];
+      defaultWs = resolveDefault(defaultWs);
+      saveSpaces();
+      settingsOpen = false;
+      switchSpace(defaultWs);
+    }
+  });
+
+  // ---------- reminders as system notifications ----------
+  const canNotify = "Notification" in window;
+  function renderNotifyBtn() {
+    const b = $("notifyBtn");
+    if (!canNotify || Notification.permission === "denied") { b.hidden = true; return; }
+    b.hidden = Notification.permission === "granted";
+    b.textContent = "Turn on reminder notifications";
+  }
+  $("notifyBtn").addEventListener("click", async () => {
+    try { await Notification.requestPermission(); } catch (e) {}
+    renderNotifyBtn();
+    if (Notification.permission === "granted") { toast("Reminders will pop up while the app is open or in the background.", null); checkNotifications(); }
+  });
+  function checkNotifications() {
+    if (!canNotify || Notification.permission !== "granted") return;
+    const now = new Date(), today = ymd(now);
+    const sent = LS.get(K.notified, {});
+    Object.keys(sent).forEach((k) => { if (sent[k] !== today) delete sent[k]; });
+    spaces.forEach((ws) => openTasks(ws.id).forEach((t) => {
+      status(t, now).filter((s) => s.rem).forEach((s) => {
+        const key = `${ws.id}:${t.id}:${s.level}`;
+        if (sent[key]) return;
+        sent[key] = today;
+        const title = (t.topic ? `[${t.topic}] ` : "") + t.title;
+        const opts = { body: `${ws.name}: ${s.rem}`, tag: key, icon: "icon-192.png" };
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then((r) => r.showNotification(title, opts)).catch(() => {});
+        else try { new Notification(title, opts); } catch (e) {}
+      });
+    }));
+    LS.set(K.notified, sent);
+  }
+
+  // ---------- install ----------
+  let installEvt = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; $("installBtn").hidden = false; });
+  $("installBtn").addEventListener("click", async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch (e) {}
+    installEvt = null; $("installBtn").hidden = true;
+  });
+  window.addEventListener("appinstalled", () => { $("installBtn").hidden = true; });
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+
+  // ---------- toast ----------
+  let toastTimer;
+  function toast(msg, action, label = "Undo") {
+    $("toastMsg").textContent = msg;
+    $("toastUndo").hidden = !action;
+    $("toastUndo").textContent = label;
+    $("toastUndo").onclick = () => { $("toast").hidden = true; action && action(); };
+    $("toast").hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { $("toast").hidden = true; }, label !== "Undo" ? 15000 : action ? 5000 : 7000);
+  }
+
+  // Another tab or window of the app changed this device's data.
+  window.addEventListener("storage", (e) => {
+    if (!e.key || !e.key.startsWith("dtl.")) return;
+    spaces = LS.get(K.spaces, spaces);
+    defaultWs = resolveDefault(LS.get(K.def, defaultWs));
+    spaces.forEach((s) => loadData(s.id));
+    if (!wsById(activeWs)) activeWs = defaultWs;
+    render();
+  });
+
+  // ---------- boot ----------
+  render();
+  renderNotifyBtn();
+  checkNotifications();
+  syncAll();
+  setInterval(() => { render(); checkNotifications(); }, 30000);
+  setInterval(() => { if (document.visibilityState === "visible" && !dragging && !openId) syncAll(); }, 60000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncAll(); });
+})();
+</script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+</body>
+</html>
