@@ -1,6 +1,8 @@
 # Daily Task Line – įdiegimas
 
-Programėlė veikia naršyklėje ir įsidiegia kaip programa kompiuteryje ir telefone. Kiekvienas workspace saugomas atskirai: **tik šiame įrenginyje** arba **savo Google paskyros Drive** (pvz., Personal → asmeninis Gmail, Softeta → darbo paskyra).
+Programėlė veikia naršyklėje ir įsidiegia kaip programa kompiuteryje ir telefone. Kiekvienas workspace saugomas atskirai: **tik šiame įrenginyje** arba **savo Google paskyros Drive** (pvz., Personal → asmeninis Gmail, Work → darbo paskyra).
+
+Pirmą kartą atidarius yra tik **Personal**. Kitus workspace'us susikuriate patys (**+ Workspace**). Jų sąrašas saugomas tik tame įrenginyje.
 
 Viską reikia padaryti vieną kartą, užtrunka apie 15 minučių.
 
@@ -49,7 +51,7 @@ Programėlė mato **tik tuos Drive failus, kuriuos pati sukūrė**, o ne visą j
 ## 4. Prijunkite workspace'us prie Google
 
 1. Atidarykite **Personal** skirtuką → **Sync with Google Drive** → pasirinkite asmeninę paskyrą.
-2. Atidarykite **Softeta** → **Sync with Google Drive** → pasirinkite darbo paskyrą.
+2. Jei reikia darbo workspace'o: **+ Workspace** → pavadinimas, pvz., `Work` → **Create** → **Sync with Google Drive** → pasirinkite darbo paskyrą.
 3. Pirmą kartą Google parodys „Google hasn't verified this app“. Tai normalu, nes programėlę sukūrėte jūs: **Continue**, tada leiskite prieigą prie Drive failų.
 
 Kiekvienas workspace Drive'e turi savo failą, pvz., `Daily Task Line – Personal.json`. Ranka jo netaisykite.
@@ -60,6 +62,6 @@ Kiekvienas workspace Drive'e turi savo failą, pvz., `Daily Task Line – Person
 
 - **Prisijungimas galioja apie valandą.** Po to viršuje atsiras **Reconnect**: vienas paspaudimas. Pakeitimai per tą laiką neprarandami, jie išsisaugo įrenginyje ir nusiunčiami prisijungus.
 - **Paskyros nesusimaišo.** Jei jungdamiesi pasirinksite ne tą paskyrą, programėlė to neleis. Paskyrą galima pakeisti tik per **Settings → Switch account**.
-- **Darbo paskyra:** jei Softeta Google administratorius blokuoja nepatvirtintas programėles, Softeta workspace'ui pasirinkite **This device only** (Settings) arba paprašykite administratoriaus leidimo.
+- **Darbo paskyra:** jei įmonės Google administratorius blokuoja nepatvirtintas programėles, darbo workspace'ui pasirinkite **This device only** (Settings) arba paprašykite administratoriaus leidimo.
 - **Priminimai:** puslapio apačioje **Turn on reminder notifications**. Kompiuteryje ir Android veikia, kol programėlė atidaryta arba fone. iPhone pranešimai iš tokių programėlių riboti.
 - **Atnaujinimas:** įkelkite naujus failus į GitHub. Programėlė atsinaujins kitą kartą ją atidarius.

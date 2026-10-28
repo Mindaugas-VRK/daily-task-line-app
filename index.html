@@ -286,10 +286,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   const K = { spaces: "dtl.spaces", def: "dtl.default", data: (id) => "dtl.data." + id, token: (id) => "dtl.token." + id, notified: "dtl.notified" };
 
   // Workspace list lives on each device; each workspace's tasks live on the device or in its own Google Drive.
-  let spaces = LS.get(K.spaces, null) || [
-    { id: "personal", name: "Personal", storage: "local" },
-    { id: "softeta", name: "Softeta", storage: "local" },
-  ];
+  // A new device starts with Personal only; people add their own workspaces.
+  let spaces = LS.get(K.spaces, null) || [{ id: "personal", name: "Personal", storage: "local" }];
   const resolveDefault = (pref) => (spaces.some((s) => s.id === pref) ? pref : (spaces.find((s) => /^personal$/i.test(s.name.trim())) || spaces[0]).id);
   let defaultWs = resolveDefault(LS.get(K.def, null));
   let activeWs = defaultWs;
