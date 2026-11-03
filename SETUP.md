@@ -63,6 +63,7 @@ Kiekvienas workspace Drive'e turi savo failą, pvz., `Daily Task Line – Person
 - **Prisijungimas galioja apie valandą.** Po to viršuje atsiras **Reconnect**: vienas paspaudimas. Pakeitimai per tą laiką neprarandami, jie išsisaugo įrenginyje ir nusiunčiami prisijungus.
 - **Paskyros nesusimaišo.** Jei jungdamiesi pasirinksite ne tą paskyrą, programėlė to neleis. Paskyrą galima pakeisti tik per **Settings → Switch account**.
 - **Darbo paskyra:** jei įmonės Google administratorius blokuoja nepatvirtintas programėles, darbo workspace'ui pasirinkite **This device only** (Settings) arba paprašykite administratoriaus leidimo.
+- **Description kaip sąrašas:** atidarę užduotį, prie Description perjunkite **Text / Checklist**. Enter prideda punktą, Backspace tuščiame punkte jį ištrina, pažymėti punktai nusileidžia žemyn. Eilutėje matosi, pvz., ☑ 2/5.
 - **Suplanuotos užduotys (Scheduled):** skiltyje **Scheduled → + New schedule** nustatote pavadinimą, pirmą datą ir pasikartojimą (kasdien, kas savaitę, kas mėnesį, kas metus). Užduotis sąraše atsiranda tą dieną, kai atidarote programėlę. Jei programėlės ilgai neatidarėte, sukuriama tik paskutinė praleista užduotis, o ne visos iš eilės.
 - **Priminimai:** puslapio apačioje **Turn on reminder notifications**. Kompiuteryje ir Android veikia, kol programėlė atidaryta arba fone. iPhone pranešimai iš tokių programėlių riboti.
 - **Atnaujinimas:** įkelkite naujus failus į GitHub. Programėlė atsinaujins kitą kartą ją atidarius.

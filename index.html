@@ -220,6 +220,23 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .xrow button:hover { background: var(--bad-soft); color: var(--bad); }
 .field > .linkbtn { align-self: flex-start; padding-left: 0; }
 
+/* Description: text or checklist */
+.desc-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 3px 10px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--paper); }
+.cl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cl-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.field .cl-item input.cl-check { width: 18px; height: 18px; padding: 0; border: 0; accent-color: var(--accent); }
+.field .cl-item input.cl-text { border-color: transparent; background: transparent; padding: 6px 8px; }
+.field .cl-item input.cl-text:focus { border-color: var(--rule); background: var(--bg); }
+.cl-item.done input.cl-text { text-decoration: line-through; color: var(--muted); }
+.cl-item button { border: 0; background: none; color: var(--muted); font-size: 18px; width: 32px; border-radius: 8px; }
+.cl-item button:hover { background: var(--bad-soft); color: var(--bad); }
+.desc-head label.hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.desc-head label.hint input { width: auto; padding: 0; border: 0; accent-color: var(--accent); }
+.cl-sep { font-size: 12px; color: var(--muted); padding: 6px 0 2px 26px; }
+
 /* Schedules */
 .sched-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
 .sched-head .hint { font-size: 13px; color: var(--muted); }
@@ -643,8 +660,11 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
       if (!last) return;
       const occ = ymd(last), id = `sch-${x.id}-${occ}`;
       if (d.tasks.some((t) => t.id === id)) return;
+      const list = x.descType === "list";
       made.push({
-        id, scheduleId: x.id, title: x.title, topic: x.topic || "", status: "Pending", desc: x.desc || "",
+        id, scheduleId: x.id, title: x.title, topic: x.topic || "", status: "Pending", desc: list ? "" : x.desc || "",
+        descType: list ? "list" : "",
+        checklist: list ? (x.desc || "").split("\n").map((l) => l.trim()).filter(Boolean).map((text, i) => ({ id: `c${i}`, text, done: false })) : [],
         due: x.dueDays === "" || x.dueDays == null ? "" : ymd(addDays(last, Number(x.dueDays) || 0)),
         naDate: x.time ? occ : "", naFrom: x.time || "", naNote: x.naNote || "", fields: [],
         order: order++, done: false, doneAt: 0, created: last.getTime(), updated: last.getTime(),
@@ -672,6 +692,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   const allFieldLabels = () => distinct([].concat(...live().map((t) => (t.fields || []).map((f) => f.label)))).sort((a, b) => a.localeCompare(b));
   const statusOf = (t) => (t.status || "").trim() || "Pending";
   const canonical = (v, list) => list.find((x) => x.toLowerCase() === v.toLowerCase()) || v;
+  const isList = (t) => t.descType === "list";
   const filledFields = (t) => (t.fields || []).filter((f) => (f.label || "").trim() || (f.value || "").trim());
 
   // ---------- render ----------
@@ -781,7 +802,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         const stCls = STATUS_CLS[st.toLowerCase()] ?? "st-custom";
         const chips = `<span class="chip ${stCls}">${esc(st)}</span>` + stats[i].map((s) => `<span class="chip ${s.cls}">${esc(s.text)}</span>`).join("");
         const isOpen = openId === t.id;
-        const sub = [t.naNote && "Next: " + t.naNote, t.desc].concat(filledFields(t).map((f) => (f.label ? `${f.label}: ${f.value || "—"}` : f.value))).filter(Boolean).join(" · ");
+        const items = isList(t) ? t.checklist || [] : null;
+        const sub = [t.naNote && "Next: " + t.naNote, items ? items.length && `☑ ${items.filter((c) => c.done).length}/${items.length}` : t.desc].concat(filledFields(t).map((f) => (f.label ? `${f.label}: ${f.value || "—"}` : f.value))).filter(Boolean).join(" · ");
         return `<li class="task" data-id="${esc(t.id)}">
           <div class="line">
             <button class="handle" type="button" aria-label="Move ${esc(t.title)}. Use arrow keys to change priority">${HANDLE}</button>
@@ -843,13 +865,32 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         </div>
       </div>
       <label class="field full"><span class="label">What to do next</span><input id="ed-nan-${id}" data-f="naNote" value="${esc(t.naNote || "")}" placeholder="e.g. Call Jonas about the quote"></label>
-      <label class="field full"><span class="label">Description</span><textarea id="ed-desc-${id}" data-f="desc" placeholder="Notes, links, what &quot;done&quot; looks like">${esc(t.desc || "")}</textarea></label>
+      <div class="field full"><div class="desc-head"><span class="label">Description</span>
+          <div class="seg" role="group" aria-label="Description type">
+            <button type="button" id="ed-dt-text-${id}" data-dtype="text" aria-pressed="${!isList(t)}">Text</button>
+            <button type="button" id="ed-dt-list-${id}" data-dtype="list" aria-pressed="${isList(t)}">Checklist</button>
+          </div></div>
+        ${isList(t) ? checklistHTML(t) : `<textarea id="ed-desc-${id}" data-f="desc" aria-label="Description" placeholder="Notes, links, what &quot;done&quot; looks like">${esc(t.desc || "")}</textarea>`}
+      </div>
       <div class="field full"><span class="label">Your fields</span>
         ${rows ? `<div class="xfields">${rows}</div>` : ""}
         <button type="button" class="linkbtn" data-xadd>+ Add field</button>
       </div>
       <div class="actions"><button class="btn" type="button" data-close>Close</button></div>
     </div>`;
+  }
+
+  function checklistHTML(t) {
+    const id = esc(t.id), items = t.checklist || [];
+    const row = (c) => `
+      <li class="cl-item${c.done ? " done" : ""}" data-cl="${esc(c.id)}">
+        <input type="checkbox" class="cl-check" id="clc-${id}-${esc(c.id)}"${c.done ? " checked" : ""} aria-label="Done: ${esc(c.text || "item")}">
+        <input class="cl-text" id="clt-${id}-${esc(c.id)}" value="${esc(c.text || "")}" placeholder="List item" aria-label="List item">
+        <button type="button" data-cldel aria-label="Remove ${esc(c.text || "item")}">×</button>
+      </li>`;
+    const open = items.filter((c) => !c.done), done = items.filter((c) => c.done);
+    return `<ul class="cl">${open.map(row).join("")}${done.length ? `<li class="cl-sep">${done.length} checked</li>${done.map(row).join("")}` : ""}</ul>
+      <button type="button" class="linkbtn" data-cladd>+ List item</button>`;
   }
 
   // ---------- task actions ----------
@@ -880,12 +921,36 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     store.patch(id, { done: false, doneAt: 0, order });
   }
   const fieldsOf = (id) => (live().find((x) => x.id === id)?.fields || []).map((f) => ({ ...f }));
+  const itemsOf = (id) => (live().find((x) => x.id === id)?.checklist || []).map((c) => ({ ...c }));
+  const focusItem = (id, cid, end) => {
+    const el = $(`clt-${id}-${cid}`); if (!el) return;
+    el.focus(); if (end) el.setSelectionRange(el.value.length, el.value.length);
+  };
+  // Like Keep: text lines become items, items become lines.
+  function setDescType(id, type) {
+    const t = live().find((x) => x.id === id); if (!t || isList(t) === (type === "list")) return;
+    if (type === "list") {
+      const lines = (t.desc || "").split("\n").map((l) => l.replace(/^\s*(?:[-*•]|\[[ xX]?\])\s*/, "").trim()).filter(Boolean);
+      const checklist = (lines.length ? lines : [""]).map((text) => ({ id: uid(), text, done: false }));
+      store.patch(id, { descType: "list", checklist, desc: "" });
+      if (!lines.length) focusItem(id, checklist[0].id);
+    } else {
+      store.patch(id, { descType: "", desc: itemsOf(id).map((c) => c.text).filter(Boolean).join("\n"), checklist: [] });
+    }
+  }
 
   $("list").addEventListener("change", (e) => {
     const li = e.target.closest("li.task"); if (!li) return;
     const id = li.dataset.id;
     const tg = e.target;
     if (tg.classList.contains("check")) { complete(id); return; }
+    const ci = tg.closest(".cl-item");
+    if (ci) {
+      const items = itemsOf(id), c = items.find((x) => x.id === ci.dataset.cl); if (!c) return;
+      if (tg.classList.contains("cl-check")) c.done = tg.checked; else c.text = tg.value.trim();
+      store.patch(id, { checklist: items });
+      return;
+    }
     if (tg.dataset.newstatus !== undefined) {
       const v = tg.value.trim();
       if (v) store.patch(id, { status: canonical(v, allStatuses()) });
@@ -918,10 +983,26 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     const id = li.dataset.id;
     if (e.target.closest(".body")) { openId = openId === id ? null : id; render(); return; }
     if (e.target.closest("[data-close]")) {
-      // drop field rows left completely empty
+      // drop field rows and list items left completely empty
       const fields = fieldsOf(id), kept = fields.filter((f) => (f.label || "").trim() || (f.value || "").trim());
+      const items = itemsOf(id), keptItems = items.filter((c) => c.text);
       openId = null;
-      if (kept.length !== fields.length) store.patch(id, { fields: kept }); else render();
+      if (kept.length !== fields.length || keptItems.length !== items.length) store.patch(id, { fields: kept, checklist: keptItems }); else render();
+      return;
+    }
+    const dt = e.target.closest("[data-dtype]");
+    if (dt) { setDescType(id, dt.dataset.dtype); return; }
+    if (e.target.closest("[data-cladd]")) {
+      const items = itemsOf(id), c = { id: uid(), text: "", done: false };
+      items.push(c);
+      store.patch(id, { checklist: items });
+      focusItem(id, c.id);
+      return;
+    }
+    const cdel = e.target.closest("[data-cldel]");
+    if (cdel) {
+      const cid = cdel.closest(".cl-item").dataset.cl;
+      store.patch(id, { checklist: itemsOf(id).filter((c) => c.id !== cid) });
       return;
     }
     if (e.target.closest("[data-xadd]")) {
@@ -941,6 +1022,25 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   $("list").addEventListener("keydown", (e) => {
     const body = e.target.closest(".body");
     if (body && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); body.click(); return; }
+    // Enter adds the next item, Backspace on an empty item removes it
+    if (e.target.classList.contains("cl-text") && (e.key === "Enter" || (e.key === "Backspace" && !e.target.value))) {
+      e.preventDefault();
+      const id = e.target.closest("li.task").dataset.id, cid = e.target.closest(".cl-item").dataset.cl;
+      const items = itemsOf(id), i = items.findIndex((c) => c.id === cid); if (i < 0) return;
+      if (e.key === "Enter") {
+        items[i].text = e.target.value.trim();
+        const c = { id: uid(), text: "", done: false };
+        items.splice(i + 1, 0, c);
+        store.patch(id, { checklist: items });
+        focusItem(id, c.id);
+      } else {
+        const prev = items.slice(0, i).reverse().find((c) => c.done === items[i].done);
+        items.splice(i, 1);
+        store.patch(id, { checklist: items });
+        if (prev) focusItem(id, prev.id, true);
+      }
+      return;
+    }
     const h = e.target.closest(".handle");
     if (h && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();
@@ -1083,7 +1183,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         <label class="field"><span class="label">Due date</span><select id="sfDue">${dueOpts.map(([v, l]) => opt(v, l, x.dueDays ?? "")).join("")}</select></label>
         <label class="field"><span class="label">Time (optional)</span><input type="time" id="sfTime" value="${esc(x.time || "")}"></label>
         <label class="field full"><span class="label">What to do next</span><input id="sfNote" value="${esc(x.naNote || "")}" placeholder="e.g. Open the timesheet and check every row"></label>
-        <label class="field full"><span class="label">Description</span><textarea id="sfDesc" placeholder="Notes, links">${esc(x.desc || "")}</textarea></label>
+        <div class="field full"><div class="desc-head"><label class="label" for="sfDesc">Description</label>
+          <label class="hint"><input type="checkbox" id="sfList"${x.descType === "list" ? " checked" : ""}> Checklist, one item per line</label></div>
+          <textarea id="sfDesc" placeholder="Notes, links">${esc(x.desc || "")}</textarea></div>
         <div class="actions full"><span class="hint" id="sfPreview"></span><button class="btn ghost" type="button" data-sched-cancel>Cancel</button><button class="btn" type="submit">Save</button></div>
       </div>
     </form>`;
@@ -1100,6 +1202,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
       until: rep && ends === "until" ? v("sfUntil") : "",
       count: rep && ends === "count" ? Math.max(1, parseInt(v("sfCount"), 10) || 1) : 0,
       dueDays: v("sfDue"), time: v("sfTime"), naNote: v("sfNote").trim(), desc: v("sfDesc"),
+      descType: $("sfList").checked ? "list" : "",
     };
   }
   function updateSchedForm() {
