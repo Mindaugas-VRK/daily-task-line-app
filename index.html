@@ -220,6 +220,32 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .xrow button:hover { background: var(--bad-soft); color: var(--bad); }
 .field > .linkbtn { align-self: flex-start; padding-left: 0; }
 
+/* Schedules */
+.sched-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+.sched-head .hint { font-size: 13px; color: var(--muted); }
+.sched-head .btn { padding: 6px 12px; font-size: 13px; }
+.sched-ico { color: var(--accent); font-size: 18px; width: 22px; text-align: center; }
+.task .rep { color: var(--accent); margin-left: 6px; font-size: 13px; }
+.sched-form { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.sched-form h3 { margin: 0; font-family: var(--f-display); font-size: 17px; }
+.sf { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+.sf .full { grid-column: 1 / -1; }
+.sf input:not([type="checkbox"]):not([type="radio"]), .sf select, .sf textarea { border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); padding: 8px 10px; width: 100%; min-width: 0; }
+.sf textarea { min-height: 64px; resize: vertical; }
+.sf .pair input[type="number"] { width: 84px; flex: 0 0 84px; }
+.sf .pair select { width: auto; flex: 0 0 auto; }
+.sf .pair input[type="date"] { flex: 1 1 140px; width: auto; }
+.sf .choice input { width: auto; flex: none; padding: 0; border: 0; }
+.sf .choice label { justify-content: flex-start; text-align: left; }
+.days { display: flex; gap: 6px; flex-wrap: wrap; }
+.days label { border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px; font-size: 13px; cursor: pointer; position: relative; }
+.days label:has(input:checked) { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.days label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.days input { position: absolute; opacity: 0; pointer-events: none; }
+.sf .actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sf .actions .hint { margin-right: auto; font-size: 13px; color: var(--muted); }
+@media (max-width: 560px) { .sf { grid-template-columns: 1fr; } }
+
 .note { display: flex; gap: 6px 14px; justify-content: center; flex-wrap: wrap; }
 </style>
 </head>
@@ -253,6 +279,11 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   </section>
   <datalist id="topicList"></datalist>
   <datalist id="fieldLabels"></datalist>
+
+  <details class="archive" id="sched">
+    <summary><span class="label" id="schedLabel">Scheduled</span></summary>
+    <div id="schedList"></div>
+  </details>
 
   <details class="archive" id="archive">
     <summary><span class="label" id="archLabel">Archived</span></summary>
@@ -292,7 +323,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   let defaultWs = resolveDefault(LS.get(K.def, null));
   let activeWs = defaultWs;
   const data = {};
-  const loadData = (id) => (data[id] = LS.get(K.data(id), null) || { tasks: [], syncedAt: 0 });
+  const loadData = (id) => { const d = LS.get(K.data(id), null) || { tasks: [], syncedAt: 0 }; d.schedules ||= []; return (data[id] = d); };
   spaces.forEach((s) => loadData(s.id));
   const saveSpaces = () => { LS.set(K.spaces, spaces); LS.set(K.def, defaultWs); };
   const saveData = (id) => LS.set(K.data(id), data[id]);
@@ -311,9 +342,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   // ---------- task store (active workspace) ----------
   // Deleted tasks stay as tombstones so a deletion on one device reaches the others.
   const live = (ws = activeWs) => (data[ws] ? data[ws].tasks.filter((t) => !t.deleted) : []);
-  function write(ws, mutate) {
+  function write(ws, mutate, key = "tasks") {
     const d = data[ws];
-    d.tasks = mutate(d.tasks);
+    d[key] = mutate(d[key]);
     saveData(ws);
     render();
     if (wsById(ws)?.storage === "gdrive") scheduleSync(ws);
@@ -322,6 +353,11 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     put(t) { t.updated = Date.now(); write(activeWs, (list) => list.filter((x) => x.id !== t.id).concat(t)); },
     patch(id, f) { const now = Date.now(); write(activeWs, (list) => list.map((x) => (x.id === id ? { ...x, ...f, updated: now } : x))); },
     remove(id) { const now = Date.now(); write(activeWs, (list) => list.map((x) => (x.id === id ? { id, deleted: true, updated: now } : x))); },
+  };
+  const liveSchedules = (ws = activeWs) => (data[ws] ? data[ws].schedules.filter((x) => !x.deleted) : []);
+  const schedStore = {
+    put(x) { x.updated = Date.now(); write(activeWs, (list) => list.filter((y) => y.id !== x.id).concat(x), "schedules"); },
+    remove(id) { const now = Date.now(); write(activeWs, (list) => list.map((y) => (y.id === id ? { id, deleted: true, updated: now } : y)), "schedules"); },
   };
 
   function merge(a, b) {
@@ -380,15 +416,19 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         ws.fileId = null; fileId = await findOrCreateFile(ws); remote = { tasks: [] };
       }
       const remoteTasks = Array.isArray(remote && remote.tasks) ? remote.tasks : [];
+      const remoteScheds = Array.isArray(remote && remote.schedules) ? remote.schedules : [];
       const merged = merge(data[id].tasks, remoteTasks);
-      if (JSON.stringify(merged) !== JSON.stringify(merge(remoteTasks, []))) {
+      const mergedScheds = merge(data[id].schedules, remoteScheds);
+      if (JSON.stringify(merged) !== JSON.stringify(merge(remoteTasks, [])) || JSON.stringify(mergedScheds) !== JSON.stringify(merge(remoteScheds, []))) {
         await gfetch(id, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ app: "Daily Task Line", workspace: ws.name, tasks: merged }),
+          body: JSON.stringify({ app: "Daily Task Line", workspace: ws.name, tasks: merged, schedules: mergedScheds }),
         });
       }
       data[id].tasks = merge(data[id].tasks, merged); // keeps edits made while this ran
+      data[id].schedules = merge(data[id].schedules, mergedScheds);
       data[id].syncedAt = Date.now();
+      generateDue(id); // a schedule made on another device may be due here
       saveData(id);
       s.status = "ok"; s.msg = "";
     } catch (e) {
@@ -504,6 +544,118 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     if (diff === -1) return "yesterday";
     return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(y !== now.getFullYear() ? { year: "numeric" } : {}) });
   }
+
+  // ---------- schedules ----------
+  // A schedule makes a task on each of its dates, like a repeating calendar event.
+  const parseYmd = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const daysIn = (y, m) => new Date(y, m + 1, 0).getDate();
+  const dayDiff = (a, b) => Math.round((b - a) / 864e5);
+  const mondayOf = (d) => addDays(d, -((d.getDay() + 6) % 7));
+  const weekdayName = (i, style = "short") => new Date(2024, 0, 7 + i).toLocaleDateString(undefined, { weekday: style }); // 7 Jan 2024 is a Sunday
+  const nthLabel = (d) => { const n = Math.ceil(d.getDate() / 7); return (n === 5 ? "last" : ["first", "second", "third", "fourth"][n - 1]) + " " + weekdayName(d.getDay(), "long"); };
+
+  function matchesRule(x, d) {
+    const start = parseYmd(x.start);
+    if (d < start) return false;
+    const n = Math.max(1, Number(x.every) || 1);
+    switch (x.repeat) {
+      case "daily": return dayDiff(start, d) % n === 0;
+      case "weekly": {
+        const days = x.weekdays && x.weekdays.length ? x.weekdays : [start.getDay()];
+        return days.includes(d.getDay()) && (dayDiff(mondayOf(start), mondayOf(d)) / 7) % n === 0;
+      }
+      case "monthly": {
+        const months = (d.getFullYear() - start.getFullYear()) * 12 + d.getMonth() - start.getMonth();
+        if (months % n) return false;
+        const len = daysIn(d.getFullYear(), d.getMonth());
+        if (x.monthly === "nth") {
+          if (d.getDay() !== start.getDay()) return false;
+          const nth = Math.ceil(start.getDate() / 7);
+          return nth === 5 ? d.getDate() + 7 > len : Math.ceil(d.getDate() / 7) === nth;
+        }
+        return d.getDate() === Math.min(start.getDate(), len); // day 31 falls on the last day of shorter months
+      }
+      case "yearly":
+        return (d.getFullYear() - start.getFullYear()) % n === 0 && d.getMonth() === start.getMonth()
+          && d.getDate() === Math.min(start.getDate(), daysIn(d.getFullYear(), d.getMonth()));
+      default: return dayDiff(start, d) === 0;
+    }
+  }
+  // Dates of a schedule from its start up to `to`, honouring "until" and "after N times".
+  function occurrences(x, to, limit = 4000) {
+    const out = [];
+    if (!x.start) return out;
+    for (let d = parseYmd(x.start), i = 0; d <= to && i < limit; d = addDays(d, 1), i++) {
+      if (x.until && ymd(d) > x.until) break;
+      if (!matchesRule(x, d)) continue;
+      out.push(d);
+      if (x.count && out.length >= x.count) break;
+      if (!x.repeat || x.repeat === "none") break;
+    }
+    return out;
+  }
+  function nextOccurrence(x, from) {
+    const list = occurrences(x, addDays(from, 4000));
+    return list.find((d) => d >= from) || null;
+  }
+  // The next date that will still make a task (today's counts until it has been made).
+  const upcoming = (x) => { const today = parseYmd(ymd(new Date())); return nextOccurrence(x, x.lastRun && x.lastRun >= ymd(today) ? addDays(today, 1) : today); };
+
+  function describeSchedule(x) {
+    const n = Math.max(1, Number(x.every) || 1);
+    const start = parseYmd(x.start);
+    let txt;
+    switch (x.repeat) {
+      case "daily": txt = n === 1 ? "Every day" : `Every ${n} days`; break;
+      case "weekly": {
+        const days = (x.weekdays && x.weekdays.length ? x.weekdays : [start.getDay()]).slice()
+          .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((i) => weekdayName(i)).join(", ");
+        txt = `${n === 1 ? "Every week" : `Every ${n} weeks`} on ${days}`; break;
+      }
+      case "monthly": txt = `${n === 1 ? "Every month" : `Every ${n} months`} on ${x.monthly === "nth" ? "the " + nthLabel(start) : "day " + start.getDate()}`; break;
+      case "yearly": txt = `${n === 1 ? "Every year" : `Every ${n} years`} on ${start.toLocaleDateString(undefined, { month: "long", day: "numeric" })}`; break;
+      default: txt = "Once, " + start.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    }
+    if (x.repeat && x.repeat !== "none") {
+      if (x.until) txt += ", until " + parseYmd(x.until).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      else if (x.count) txt += `, ${x.count} times`;
+    }
+    if (x.time) txt += " at " + x.time;
+    return txt;
+  }
+
+  // Make today's tasks. Task ids come from the schedule and date, so two devices never make the same task twice,
+  // and a made task carries the date as its edit time, so deleting it on any device wins over a late copy.
+  function generateDue(ws) {
+    const d = data[ws];
+    if (!d) return 0;
+    const today = parseYmd(ymd(new Date())), todayStr = ymd(today);
+    let order = (() => { const open = openTasks(ws); return open.length ? (open[open.length - 1].order ?? 0) + 1 : 1; })();
+    const made = [];
+    let touched = false;
+    d.schedules.forEach((x) => {
+      if (x.deleted || !x.start || (x.lastRun && x.lastRun >= todayStr)) return;
+      const from = x.lastRun ? addDays(parseYmd(x.lastRun), 1) : parseYmd(x.start);
+      const due = occurrences(x, today).filter((o) => o >= from);
+      x.lastRun = todayStr; touched = true;
+      const last = due[due.length - 1]; // after a long break, only the latest one
+      if (!last) return;
+      const occ = ymd(last), id = `sch-${x.id}-${occ}`;
+      if (d.tasks.some((t) => t.id === id)) return;
+      made.push({
+        id, scheduleId: x.id, title: x.title, topic: x.topic || "", status: "Pending", desc: x.desc || "",
+        due: x.dueDays === "" || x.dueDays == null ? "" : ymd(addDays(last, Number(x.dueDays) || 0)),
+        naDate: x.time ? occ : "", naFrom: x.time || "", naNote: x.naNote || "", fields: [],
+        order: order++, done: false, doneAt: 0, created: last.getTime(), updated: last.getTime(),
+      });
+    });
+    if (made.length) d.tasks = d.tasks.concat(made);
+    if (made.length || touched) saveData(ws);
+    if (made.length && wsById(ws)?.storage === "gdrive") scheduleSync(ws);
+    return made.length;
+  }
+  const generateAll = () => spaces.forEach((ws) => generateDue(ws.id));
 
   // ---------- derived lists ----------
   const openTasks = (ws) => live(ws).filter((t) => !t.done).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -636,7 +788,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
             <span class="rank">${i + 1}</span>
             <input class="check" type="checkbox" id="chk-${esc(t.id)}" aria-label="Mark ${esc(t.title)} done">
             <div class="body" role="button" tabindex="0" aria-expanded="${isOpen}">
-              <div class="title">${t.topic ? `<span class="tag">${esc(t.topic)}</span>` : ""}${esc(t.title)}</div>
+              <div class="title">${t.topic ? `<span class="tag">${esc(t.topic)}</span>` : ""}${esc(t.title)}${t.scheduleId ? `<span class="rep" title="Made by a schedule">↻</span>` : ""}</div>
               ${sub && !isOpen ? `<div class="desc">${esc(sub)}</div>` : ""}
             </div>
             <div class="chips">${chips}</div>
@@ -645,6 +797,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         </li>`;
       }).join("");
     }
+
+    renderSchedules();
 
     $("archLabel").textContent = `Archived · ${done.length}`;
     $("archList").innerHTML = done.length ? done.map((t) => `
@@ -875,9 +1029,130 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   $("list").addEventListener("pointerup", endDrag);
   $("list").addEventListener("pointercancel", endDrag);
 
+  // ---------- schedules UI ----------
+  let schedEdit = null; // null | "new" | schedule id
+  function renderSchedules() {
+    const list = liveSchedules().map((x) => ({ x, next: upcoming(x) }))
+      .sort((a, b) => (a.next ? a.next.getTime() : Infinity) - (b.next ? b.next.getTime() : Infinity));
+    $("schedLabel").textContent = `Scheduled · ${list.length}`;
+    if (schedEdit) {
+      // keep the form as typed while it is open
+      if (!$("schedForm")) { $("schedList").innerHTML = schedFormHTML(schedEdit === "new" ? null : liveSchedules().find((x) => x.id === schedEdit)); updateSchedForm(); }
+      return;
+    }
+    const head = `<div class="sched-head"><span class="hint">Tasks that appear on their day, once or on repeat.</span><button class="btn ghost" type="button" data-sched-new>+ New schedule</button></div>`;
+    $("schedList").innerHTML = head + (list.length ? list.map(({ x, next }) => `
+      <div class="arch" data-sid="${esc(x.id)}">
+        <span class="sched-ico" aria-hidden="true">↻</span>
+        <div style="min-width:0"><div class="title" style="text-decoration:none;color:var(--ink)">${x.topic ? `<span class="tag">${esc(x.topic)}</span>` : ""}${esc(x.title)}</div>
+          <div class="when">${esc(describeSchedule(x))} · ${next ? "Next: " + esc(fmtDate(ymd(next))) : "No more dates"}</div></div>
+        <div class="ops"><button class="btn ghost" type="button" data-sedit>Edit</button><button class="btn ghost" type="button" data-sdel>Delete</button></div>
+      </div>`).join("") : `<div class="empty">Nothing scheduled. Use <b>+ New schedule</b> for a task that should appear on a set day, for example on the 1st of every month.</div>`);
+  }
+
+  function schedFormHTML(x) {
+    x = x || { start: ymd(new Date()), repeat: "monthly", every: 1, monthly: "day", dueDays: "0" };
+    const start = parseYmd(x.start);
+    const opt = (v, label, cur) => `<option value="${v}"${String(cur) === String(v) ? " selected" : ""}>${label}</option>`;
+    const dueOpts = [["0", "Same day"], ["1", "1 day later"], ["2", "2 days later"], ["3", "3 days later"], ["7", "1 week later"], ["", "No due date"]];
+    if (!dueOpts.some(([v]) => v === String(x.dueDays ?? ""))) dueOpts.push([String(x.dueDays), `${x.dueDays} days later`]);
+    const days = x.weekdays && x.weekdays.length ? x.weekdays : [start.getDay()];
+    const ends = x.until ? "until" : x.count ? "count" : "never";
+    return `<form class="sched-form" id="schedForm" autocomplete="off">
+      <h3>${x.id ? "Edit schedule" : "New schedule"}</h3>
+      <div class="sf">
+        <label class="field full"><span class="label">Task name</span><input id="sfTitle" value="${esc(x.title || "")}" placeholder="e.g. Fill in employees' hours"></label>
+        <label class="field"><span class="label">Category</span><input id="sfTopic" list="topicList" value="${esc(x.topic || "")}" placeholder="Category"></label>
+        <label class="field"><span class="label">First date</span><input type="date" id="sfStart" value="${esc(x.start)}"></label>
+        <label class="field"><span class="label">Repeat</span><select id="sfRepeat">
+          ${opt("none", "Does not repeat", x.repeat)}${opt("daily", "Daily", x.repeat)}${opt("weekly", "Weekly", x.repeat)}${opt("monthly", "Monthly", x.repeat)}${opt("yearly", "Yearly", x.repeat)}
+        </select></label>
+        <div class="field" data-rep=""><span class="label">Every</span><div class="pair"><input type="number" min="1" id="sfEvery" value="${esc(x.every || 1)}" aria-label="Repeat every"><span id="sfUnit">month</span></div></div>
+        <div class="field full" data-rep="weekly"><span class="label">On</span><div class="days">
+          ${[1, 2, 3, 4, 5, 6, 0].map((i) => `<label><input type="checkbox" name="sfDay" value="${i}"${days.includes(i) ? " checked" : ""}>${esc(weekdayName(i))}</label>`).join("")}
+        </div></div>
+        <div class="field full" data-rep="monthly"><span class="label">On</span><div class="choice">
+          <label><input type="radio" name="sfMonthly" value="day"${x.monthly !== "nth" ? " checked" : ""}><span>Day <b id="sfDayN">${start.getDate()}</b> of the month</span></label>
+          <label><input type="radio" name="sfMonthly" value="nth"${x.monthly === "nth" ? " checked" : ""}><span>The <b id="sfNth">${esc(nthLabel(start))}</b></span></label>
+        </div></div>
+        <div class="field full" data-rep=""><span class="label">Ends</span><div class="pair">
+          <select id="sfEnds" aria-label="Ends">${opt("never", "Never", ends)}${opt("until", "On date", ends)}${opt("count", "After", ends)}</select>
+          <input type="date" id="sfUntil" value="${esc(x.until || "")}" aria-label="Last date">
+          <input type="number" min="1" id="sfCount" value="${esc(x.count || 12)}" aria-label="Number of times"><span id="sfCountUnit">times</span>
+        </div></div>
+        <label class="field"><span class="label">Due date</span><select id="sfDue">${dueOpts.map(([v, l]) => opt(v, l, x.dueDays ?? "")).join("")}</select></label>
+        <label class="field"><span class="label">Time (optional)</span><input type="time" id="sfTime" value="${esc(x.time || "")}"></label>
+        <label class="field full"><span class="label">What to do next</span><input id="sfNote" value="${esc(x.naNote || "")}" placeholder="e.g. Open the timesheet and check every row"></label>
+        <label class="field full"><span class="label">Description</span><textarea id="sfDesc" placeholder="Notes, links">${esc(x.desc || "")}</textarea></label>
+        <div class="actions full"><span class="hint" id="sfPreview"></span><button class="btn ghost" type="button" data-sched-cancel>Cancel</button><button class="btn" type="submit">Save</button></div>
+      </div>
+    </form>`;
+  }
+
+  function readSchedForm() {
+    const v = (id) => $(id).value;
+    const repeat = v("sfRepeat"), ends = v("sfEnds"), rep = repeat !== "none";
+    return {
+      title: v("sfTitle").trim(), topic: v("sfTopic").trim(), start: v("sfStart"), repeat,
+      every: Math.max(1, parseInt(v("sfEvery"), 10) || 1),
+      weekdays: repeat === "weekly" ? [...document.querySelectorAll('#schedForm [name="sfDay"]:checked')].map((c) => Number(c.value)) : [],
+      monthly: (document.querySelector('#schedForm [name="sfMonthly"]:checked') || {}).value || "day",
+      until: rep && ends === "until" ? v("sfUntil") : "",
+      count: rep && ends === "count" ? Math.max(1, parseInt(v("sfCount"), 10) || 1) : 0,
+      dueDays: v("sfDue"), time: v("sfTime"), naNote: v("sfNote").trim(), desc: v("sfDesc"),
+    };
+  }
+  function updateSchedForm() {
+    if (!$("schedForm")) return;
+    const f = readSchedForm(), ends = $("sfEnds").value;
+    document.querySelectorAll("#schedForm [data-rep]").forEach((el) => { const r = el.dataset.rep; el.hidden = f.repeat === "none" || (!!r && r !== f.repeat); });
+    const unit = { daily: "day", weekly: "week", monthly: "month", yearly: "year" }[f.repeat] || "";
+    $("sfUnit").textContent = unit + (f.every > 1 ? "s" : "");
+    $("sfUntil").hidden = ends !== "until";
+    $("sfCount").hidden = $("sfCountUnit").hidden = ends !== "count";
+    if (!f.start) { $("sfPreview").textContent = "Pick the first date."; return; }
+    const d = parseYmd(f.start);
+    $("sfDayN").textContent = d.getDate();
+    $("sfNth").textContent = nthLabel(d);
+    const next = nextOccurrence(f, parseYmd(ymd(new Date())));
+    $("sfPreview").textContent = `${describeSchedule(f)}. ${next ? "Next: " + fmtDate(ymd(next)) : "No dates ahead."}`;
+  }
+
+  $("schedList").addEventListener("input", updateSchedForm);
+  $("schedList").addEventListener("change", updateSchedForm);
+  $("schedList").addEventListener("click", (e) => {
+    if (e.target.closest("[data-sched-new]")) { schedEdit = "new"; renderSchedules(); $("sfTitle")?.focus(); return; }
+    if (e.target.closest("[data-sched-cancel]")) { schedEdit = null; renderSchedules(); return; }
+    const row = e.target.closest("[data-sid]"); if (!row) return;
+    const id = row.dataset.sid;
+    if (e.target.closest("[data-sedit]")) { schedEdit = id; renderSchedules(); $("sfTitle")?.focus(); return; }
+    const del = e.target.closest("[data-sdel]");
+    if (del) {
+      if (del.dataset.armed) { schedStore.remove(id); toast("Schedule deleted. Tasks it already made stay in your list.", null); return; }
+      del.dataset.armed = "1"; del.textContent = "Confirm delete"; del.className = "btn danger";
+      setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = "Delete"; del.className = "btn ghost"; } }, 3000);
+    }
+  });
+  $("schedList").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = readSchedForm();
+    if (!f.title) { $("sfTitle").focus(); return; }
+    if (!f.start) { $("sfStart").focus(); return; }
+    if (f.topic) f.topic = canonical(f.topic, allTopics());
+    const prev = schedEdit !== "new" ? liveSchedules().find((x) => x.id === schedEdit) : null;
+    // Saving re-checks from the first date; ids keep already-made tasks from coming back twice.
+    const x = { ...(prev || {}), ...f, id: prev ? prev.id : uid(), lastRun: "" };
+    schedEdit = null;
+    schedStore.put(x);
+    const made = generateDue(activeWs);
+    render();
+    const next = upcoming(x);
+    toast(made ? `Saved. “${x.title}” is in your list for today.` : `Saved. “${x.title}” will appear ${next ? fmtDate(ymd(next)) : "— no dates ahead"}.`, null);
+  });
+
   // ---------- workspaces ----------
   function switchSpace(id) {
-    activeWs = id; topicFilter = null; openId = null; wsEdit = null;
+    activeWs = id; topicFilter = null; openId = null; wsEdit = null; schedEdit = null;
     $("newTopic").value = "";
     render();
     syncWs(id);
@@ -896,7 +1171,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     if (spaces.some((s) => s.name.trim().toLowerCase() === name.toLowerCase())) { toast(`There's already a workspace called ${name}.`, null); return; }
     const id = "ws-" + uid();
     spaces.push({ id, name, storage: "local" });
-    data[id] = { tasks: [], syncedAt: 0 };
+    data[id] = { tasks: [], schedules: [], syncedAt: 0 };
     saveSpaces(); saveData(id);
     settingsOpen = true; // next: choose where it's saved
     switchSpace(id);
@@ -1016,11 +1291,12 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   });
 
   // ---------- boot ----------
+  generateAll();
   render();
   renderNotifyBtn();
   checkNotifications();
   syncAll();
-  setInterval(() => { render(); checkNotifications(); }, 30000);
+  setInterval(() => { generateAll(); render(); checkNotifications(); }, 30000);
   setInterval(() => { if (document.visibilityState === "visible" && !dragging && !openId) syncAll(); }, 60000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncAll(); });
 })();
