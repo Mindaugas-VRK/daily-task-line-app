@@ -255,6 +255,17 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .wl-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .field .wl-form input { flex: 0 1 130px; width: auto; }
 .field .wl-form input[type="date"] { flex: 0 1 150px; }
+
+/* Links to other tasks and web pages */
+.lk { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 2px 0; }
+.lk-ico { color: var(--muted); text-align: center; }
+.lk a, .lk .lk-go { color: var(--accent); overflow-wrap: anywhere; text-align: left; border: 0; background: none; padding: 4px 0; font-size: 14px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.lk small { color: var(--muted); font-size: 12px; margin-left: 6px; text-decoration: none; }
+.lk.done .lk-go { text-decoration: line-through; color: var(--muted); }
+.lk button[data-lkdel] { border: 0; background: none; color: var(--muted); font-size: 18px; width: 32px; border-radius: 8px; }
+.lk button[data-lkdel]:hover { background: var(--bad-soft); color: var(--bad); }
+.task.flash, .arch.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
 .field .wl-form input.wl-note-in { flex: 1 1 200px; }
 .wl-form .btn { padding: 7px 14px; }
 
@@ -865,7 +876,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         const chips = `<span class="chip ${stCls}">${esc(st)}</span>` + stats[i].map((s) => `<span class="chip ${s.cls}">${esc(s.text)}</span>`).join("");
         const isOpen = openId === t.id;
         const logged = loggedMin(t), more = openActs(t).length - 1, acts = t.actions || [];
-        const sub = [t.naNote && "Next: " + t.naNote + (more > 0 ? ` (+${more})` : ""), acts.length > 1 && `☑ ${acts.filter((a) => a.done).length}/${acts.length}`, t.desc, logged && "⏱ " + fmtDur(logged)].concat(filledFields(t).map((f) => (f.label ? `${f.label}: ${f.value || "—"}` : f.value))).filter(Boolean).join(" · ");
+        const nLinks = linksOf(t).length;
+        const sub = [t.naNote && "Next: " + t.naNote + (more > 0 ? ` (+${more})` : ""), acts.length > 1 && `☑ ${acts.filter((a) => a.done).length}/${acts.length}`, t.desc, logged && "⏱ " + fmtDur(logged), nLinks && "🔗 " + nLinks].concat(filledFields(t).map((f) => (f.label ? `${f.label}: ${f.value || "—"}` : f.value))).filter(Boolean).join(" · ");
         return `<li class="task" data-id="${esc(t.id)}">
           <div class="line">
             <button class="handle" type="button" aria-label="Move ${esc(t.title)}. Use arrow keys to change priority">${HANDLE}</button>
@@ -924,6 +936,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
       <label class="field full"><span class="label">Description</span>
         <textarea id="ed-desc-${id}" data-f="desc" placeholder="Notes, links, what &quot;done&quot; looks like">${esc(t.desc || "")}</textarea>
       </label>
+      ${linksHTML(t)}
       <div class="field full"><span class="label">Your fields</span>
         ${rows ? `<div class="xfields">${rows}</div>` : ""}
         <button type="button" class="linkbtn" data-xadd>+ Add field</button>
@@ -956,6 +969,64 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         <button type="button" class="linkbtn" data-actadd>+ Next action</button>
         ${done.length ? `<ul class="cl na-done"><li class="cl-sep">${done.length} done</li>${done.map(drow).join("")}</ul>` : ""}
       </div>`;
+  }
+
+  // A task link is saved on one task and shown on both; web links belong to the task.
+  function linksOf(t) {
+    const all = live(), byId = new Map(all.map((x) => [x.id, x]));
+    const own = (t.links || []).map((l) => (l.task ? { ...l, owner: t.id, other: byId.get(l.task) } : { ...l, owner: t.id })).filter((l) => !l.task || l.other);
+    const back = all.filter((x) => x.id !== t.id).flatMap((x) => (x.links || []).filter((l) => l.task === t.id).map((l) => ({ ...l, owner: x.id, other: x })));
+    const seen = new Set(own.filter((l) => l.task).map((l) => l.task));
+    return own.concat(back.filter((l) => !seen.has(l.other.id)));
+  }
+  const linkName = (url) => { try { const u = new URL(url); return u.hostname.replace(/^www\./, "") + (u.pathname.length > 1 ? u.pathname.replace(/\/$/, "") : ""); } catch (e) { return url; } };
+  function linksHTML(t) {
+    const id = esc(t.id), links = linksOf(t);
+    const linked = new Set(links.filter((l) => l.other).map((l) => l.other.id));
+    const others = live().filter((x) => x.id !== t.id && !linked.has(x.id)).sort((a, b) => a.done - b.done || a.title.localeCompare(b.title));
+    const row = (l) => l.other
+      ? `<li class="lk${l.other.done ? " done" : ""}" data-lk="${esc(l.id)}" data-owner="${esc(l.owner)}"><span class="lk-ico" aria-hidden="true">↔</span>
+          <span><button type="button" class="lk-go" data-goto="${esc(l.other.id)}">${esc(l.other.title)}</button><small>${esc([l.other.topic, l.other.done && "done"].filter(Boolean).join(" · "))}</small></span>
+          <button type="button" data-lkdel aria-label="Unlink ${esc(l.other.title)}">×</button></li>`
+      : `<li class="lk" data-lk="${esc(l.id)}" data-owner="${esc(l.owner)}"><span class="lk-ico" aria-hidden="true">🔗</span>
+          <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.name || linkName(l.url))}</a>
+          <button type="button" data-lkdel aria-label="Remove link ${esc(l.name || l.url)}">×</button></li>`;
+    return `<div class="field full"><span class="label">Links</span>
+        ${links.length ? `<ul class="cl">${links.map(row).join("")}</ul>` : ""}
+        <input id="lk-in-${id}" data-lkin list="lk-opts-${id}" placeholder="Type a task name or paste a link, then Enter" aria-label="Link a task or web page">
+        <datalist id="lk-opts-${id}">${others.map((x) => `<option value="${esc(x.title)}">${esc([x.topic, x.done && "done"].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>
+      </div>`;
+  }
+  // One field, like Jira: a task's name links that task, anything that looks like an address becomes a web link.
+  function addLink(id, text) {
+    const t = live().find((x) => x.id === id), v = (text || "").trim(); if (!t || !v) return false;
+    const taken = new Set(linksOf(t).filter((l) => l.other).map((l) => l.other.id));
+    const match = live().filter((x) => x.id !== id && !taken.has(x.id) && x.title.toLowerCase() === v.toLowerCase()).sort((a, b) => a.done - b.done)[0];
+    let link = match && { id: uid(), task: match.id };
+    if (!link && !/\s/.test(v) && (/^[a-z][a-z0-9+.-]*:/i.test(v) || /^[^/]+\.[a-z]{2,}(\/|$)/i.test(v))) {
+      const url = /^[a-z][a-z0-9+.-]*:/i.test(v) ? v : "https://" + v;
+      try { if (/^(https?|mailto|tel):$/.test(new URL(url).protocol)) link = { id: uid(), url, name: "" }; } catch (e) {}
+    }
+    if (!link) { toast(`No task called “${v}”, and it isn't a web link.`, null); return false; }
+    store.patch(id, { links: (t.links || []).concat(link) });
+    $(`lk-in-${id}`)?.focus();
+    return true;
+  }
+  // Open the linked task: in the list if it is open, in the archive if it is done.
+  function gotoTask(tid) {
+    const x = live().find((t) => t.id === tid); if (!x) return;
+    if (x.done) {
+      openId = null; render();
+      $("archive").open = true;
+      const row = document.querySelector(`.arch[data-id="${CSS.escape(tid)}"]`);
+      row?.scrollIntoView({ block: "center", behavior: "smooth" }); row?.classList.add("flash");
+      return;
+    }
+    if (topicFilter && (x.topic || "").toLowerCase() !== topicFilter.toLowerCase()) topicFilter = null;
+    openId = tid; render();
+    const li = document.querySelector(`li.task[data-id="${CSS.escape(tid)}"]`);
+    li?.scrollIntoView({ block: "start", behavior: "smooth" }); li?.classList.add("flash");
+    li?.querySelector(".body")?.focus({ preventScroll: true });
   }
 
   function worklogHTML(t) {
@@ -1028,6 +1099,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     const tg = e.target;
     if (tg.classList.contains("check")) { complete(id); return; }
     if (tg.dataset.wlin) return;
+    if (tg.dataset.lkin !== undefined) return;
     const ar = tg.closest("[data-act]");
     if (ar) {
       const acts = actsOf(id), a = acts.find((x) => x.id === ar.dataset.act); if (!a) return;
@@ -1076,6 +1148,14 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
       return;
     }
     if (e.target.closest("[data-wladd]")) { logWork(id); return; }
+    const go = e.target.closest("[data-goto]");
+    if (go) { gotoTask(go.dataset.goto); return; }
+    const ldel = e.target.closest("[data-lkdel]");
+    if (ldel) {
+      const row = ldel.closest("[data-lk]"), owner = live().find((x) => x.id === row.dataset.owner);
+      if (owner) store.patch(owner.id, { links: (owner.links || []).filter((l) => l.id !== row.dataset.lk) });
+      return;
+    }
     const wdel = e.target.closest("[data-wldel]");
     if (wdel) {
       const wid = wdel.closest("[data-wl]").dataset.wl;
@@ -1107,6 +1187,11 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     const body = e.target.closest(".body");
     if (body && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); body.click(); return; }
     if (e.target.dataset.wlin && e.key === "Enter") { e.preventDefault(); logWork(e.target.closest("li.task").dataset.id); return; }
+    if (e.target.dataset.lkin !== undefined && e.key === "Enter") {
+      e.preventDefault();
+      if (addLink(e.target.closest("li.task").dataset.id, e.target.value)) e.target.value = "";
+      return;
+    }
     // Enter in a next action's text adds another one
     if (e.target.dataset.af === "note" && e.key === "Enter") {
       e.preventDefault();
@@ -1132,6 +1217,11 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   });
 
   $("list").addEventListener("input", (e) => {
+    // picking a task from the suggestions links it straight away
+    if (e.target.dataset.lkin !== undefined && (!e.inputType || e.inputType === "insertReplacementText") && e.target.list && [...e.target.list.options].some((o) => o.value === e.target.value)) {
+      addLink(e.target.closest("li.task").dataset.id, e.target.value);
+      return;
+    }
     const k = e.target.dataset.wlin; if (!k) return;
     const id = e.target.closest("li.task").dataset.id;
     (wlDraft[id] ||= {})[k] = e.target.value;
