@@ -1,6 +1,6 @@
 // Offline support: the app's own files come from the network when online, from cache when not.
 // Google sign-in and Drive requests are never cached.
-const CACHE = "dtl-v1";
+const CACHE = "dtl-v2";
 const SHELL = ["./", "index.html", "config.js", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
@@ -18,8 +18,10 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
+  // no-cache: always ask GitHub whether a file changed, instead of using the browser's 10-minute copy
+  const live = e.request.mode === "navigate" ? fetch(e.request.url, { cache: "no-cache" }) : fetch(e.request, { cache: "no-cache" });
   e.respondWith(
-    fetch(e.request)
+    live
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));

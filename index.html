@@ -175,6 +175,7 @@ details.archive[open] summary { border-bottom: 1px solid var(--rule); }
 .note { font-size: 12px; color: var(--muted); text-align: center; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--paper); padding: 10px 14px; border-radius: 10px; display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); z-index: 20; max-width: calc(100% - 32px); }
 .toast button { background: none; border: 0; color: var(--accent-soft); font-weight: 600; }
+.toast.update { bottom: auto; top: calc(12px + env(safe-area-inset-top, 0px)); }
 
 @media (max-width: 560px) {
   .line { grid-template-columns: auto auto 1fr; grid-template-areas: "h c b" "h c x"; row-gap: 4px; }
@@ -332,6 +333,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     <button type="button" class="linkbtn" id="installBtn" hidden>Install app</button>
   </p>
 </div>
+<div class="toast update" id="updateBar" role="status" hidden><span>A new version of the app is ready.</span><button id="updateBtn" type="button">Reload</button></div>
 <div class="toast" id="toast" hidden><span id="toastMsg"></span><button id="toastUndo" type="button">Undo</button></div>
 
 <script>
@@ -1480,7 +1482,23 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   syncAll();
   setInterval(() => { generateAll(); render(); checkNotifications(); }, 30000);
   setInterval(() => { if (document.visibilityState === "visible" && !dragging && !openId) syncAll(); }, 60000);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncAll(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { syncAll(); checkUpdate(); } });
+
+  // ---------- new version ----------
+  // An installed app window can stay open for days, so compare the published page with the one we started from.
+  const pageText = () => fetch(location.pathname, { cache: "no-store" }).then((r) => (r.ok ? r.text() : null)).catch(() => null);
+  let startPage = null, lastCheck = 0;
+  async function checkUpdate() {
+    if (!navigator.onLine || Date.now() - lastCheck < 60000 || !$("updateBar").hidden) return;
+    lastCheck = Date.now();
+    const now = await pageText();
+    if (!now) return;
+    if (startPage == null) { startPage = now; return; }
+    if (now !== startPage) $("updateBar").hidden = false;
+  }
+  $("updateBtn").addEventListener("click", () => location.reload());
+  checkUpdate();
+  setInterval(checkUpdate, 15 * 60000);
 })();
 </script>
 <script src="https://accounts.google.com/gsi/client" async></script>
