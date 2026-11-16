@@ -486,7 +486,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
       s.msg = e.auth ? "" : (e.message || "Sync failed");
     } finally {
       s.busy = false;
-      render();
+      render(true);
       if (s.again) { s.again = false; syncWs(id); }
     }
   }
@@ -825,13 +825,15 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         : `Deletes ${esc(ws.name)} and its ${count} tasks from this device. Click again to confirm.`}</p>`;
   }
 
-  function render() {
+  // background = a redraw the user didn't cause (timer, sync, another tab): text being typed must survive it
+  function render(background = false) {
     if (dragging) { pendingRender = true; return; }
     // keep the cursor where it was when the list redraws under an open editor
     const active = document.activeElement;
-    const focusId = active && active.id && active.closest && active.closest("#list") ? active.id : null;
+    const focusId = active && active.id && active.closest && active.closest("#list, #spaces, #settings") ? active.id : null;
     let sel = null;
     try { sel = [active.selectionStart, active.selectionEnd]; } catch (e) {}
+    const typed = background && focusId && (active.tagName === "TEXTAREA" || (active.tagName === "INPUT" && /^(text|url|search|)$/.test(active.getAttribute("type") || ""))) ? active.value : null;
 
     const now = new Date();
     $("today").textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -906,6 +908,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 
     if (focusId) {
       const el = $(focusId);
+      if (el && typed != null && el.value !== typed) el.value = typed;
       if (el && el !== document.activeElement) {
         el.focus();
         try { if (sel && sel[0] != null) el.setSelectionRange(sel[0], sel[1]); } catch (e) {}
@@ -1561,7 +1564,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     defaultWs = resolveDefault(LS.get(K.def, defaultWs));
     spaces.forEach((s) => loadData(s.id));
     if (!wsById(activeWs)) activeWs = defaultWs;
-    render();
+    render(true);
   });
 
   // ---------- boot ----------
@@ -1570,7 +1573,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   renderNotifyBtn();
   checkNotifications();
   syncAll();
-  setInterval(() => { generateAll(); render(); checkNotifications(); }, 30000);
+  setInterval(() => { generateAll(); render(true); checkNotifications(); }, 30000);
   setInterval(() => { if (document.visibilityState === "visible" && !dragging && !openId) syncAll(); }, 60000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { syncAll(); checkUpdate(); } });
 
