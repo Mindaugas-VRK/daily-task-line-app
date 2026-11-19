@@ -206,6 +206,10 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .panel .row input[type="text"] { border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); padding: 8px 10px; flex: 1 1 200px; min-width: 0; }
 .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .choice label { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; cursor: pointer; display: flex; gap: 10px; align-items: flex-start; }
+.panel .choice { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.choice label.off { opacity: .55; cursor: default; }
+.panel .choice input { width: auto; flex: none; padding: 0; border: 0; }
+.panel .choice label { justify-content: flex-start; text-align: left; }
 .choice label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .choice input { margin-top: 3px; accent-color: var(--accent); }
 .choice small { display: block; color: var(--muted); font-size: 12px; }
@@ -378,6 +382,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   const saveSpaces = () => { LS.set(K.spaces, spaces); LS.set(K.def, defaultWs); };
   const saveData = (id) => LS.set(K.data(id), data[id]);
   const wsById = (id) => spaces.find((s) => s.id === id);
+  const synced = (id) => { const st = wsById(id)?.storage; return st === "gdrive" || st === "folder"; };
 
   let openId = null;
   let topicFilter = null;
@@ -397,7 +402,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     d[key] = mutate(d[key]);
     saveData(ws);
     render();
-    if (wsById(ws)?.storage === "gdrive") scheduleSync(ws);
+    if (synced(ws)) scheduleSync(ws);
   }
   const store = {
     put(t) { t.updated = Date.now(); write(activeWs, (list) => list.filter((x) => x.id !== t.id).concat(t)); },
@@ -449,31 +454,56 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     return f.id;
   }
 
+  // Each synced workspace has one JSON file: in Google Drive, or a file the person picked on this computer.
+  const driveIO = (ws) => {
+    let fileId;
+    return {
+      async read() {
+        fileId = await findOrCreateFile(ws);
+        try { return await (await gfetch(ws.id, `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`)).json(); }
+        catch (e) { if (e.status !== 404) throw e; ws.fileId = null; fileId = await findOrCreateFile(ws); return { tasks: [] }; }
+      },
+      write: (body) => gfetch(ws.id, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body,
+      }),
+    };
+  };
+  const fileIO = (fh) => ({
+    async read() {
+      const text = await (await fh.getFile()).text();
+      if (!text.trim()) return { tasks: [] };
+      let obj = null;
+      try { obj = JSON.parse(text); } catch (e) {}
+      // never overwrite some other JSON file the person picked by mistake
+      if (!obj || !Array.isArray(obj.tasks)) throw new Error(`“${fh.name}” isn't a Daily Task Line file, so it was left as it is`);
+      return obj;
+    },
+    async write(body) { const w = await fh.createWritable(); await w.write(body); await w.close(); },
+  });
+
   async function syncWs(id) {
     const ws = wsById(id);
-    if (!ws || ws.storage !== "gdrive") return;
+    if (!ws || !synced(id)) return;
     const s = st(id);
     if (s.busy) { s.again = true; return; }
-    if (!tokenFor(id)) { s.status = "auth"; renderSync(); return; }
+    let io;
+    if (ws.storage === "folder") {
+      const fh = await fileOf(id);
+      if (!fh || !(await fileAllowed(fh, false))) { s.status = "auth"; renderSync(); return; }
+      io = fileIO(fh);
+    } else {
+      if (!tokenFor(id)) { s.status = "auth"; renderSync(); return; }
+      io = driveIO(ws);
+    }
     s.busy = true; s.status = "busy"; renderSync();
     try {
-      let fileId = await findOrCreateFile(ws);
-      let remote;
-      try {
-        remote = await (await gfetch(id, `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`)).json();
-      } catch (e) {
-        if (e.status !== 404) throw e;
-        ws.fileId = null; fileId = await findOrCreateFile(ws); remote = { tasks: [] };
-      }
+      const remote = await io.read();
       const remoteTasks = Array.isArray(remote && remote.tasks) ? remote.tasks.map(normTask) : [];
       const remoteScheds = Array.isArray(remote && remote.schedules) ? remote.schedules : [];
       const merged = merge(data[id].tasks, remoteTasks);
       const mergedScheds = merge(data[id].schedules, remoteScheds);
       if (JSON.stringify(merged) !== JSON.stringify(merge(remoteTasks, [])) || JSON.stringify(mergedScheds) !== JSON.stringify(merge(remoteScheds, []))) {
-        await gfetch(id, `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ app: "Daily Task Line", workspace: ws.name, tasks: merged, schedules: mergedScheds }),
-        });
+        await io.write(JSON.stringify({ app: "Daily Task Line", workspace: ws.name, tasks: merged, schedules: mergedScheds }, null, 1));
       }
       data[id].tasks = merge(data[id].tasks, merged); // keeps edits made while this ran
       data[id].schedules = merge(data[id].schedules, mergedScheds);
@@ -482,8 +512,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
       saveData(id);
       s.status = "ok"; s.msg = "";
     } catch (e) {
-      s.status = e.auth ? "auth" : "error";
-      s.msg = e.auth ? "" : (e.message || "Sync failed");
+      const denied = e.auth || e.name === "NotAllowedError" || e.name === "SecurityError";
+      s.status = denied ? "auth" : "error";
+      s.msg = denied ? "" : e.name === "NotFoundError" ? "the file was moved or deleted" : (e.message || "Sync failed");
     } finally {
       s.busy = false;
       render(true);
@@ -495,7 +526,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     clearTimeout(s.timer);
     s.timer = setTimeout(() => syncWs(id), 1500);
   }
-  const syncAll = () => spaces.forEach((ws) => { if (ws.storage === "gdrive" && tokenFor(ws.id)) syncWs(ws.id); });
+  const syncAll = () => spaces.forEach((ws) => { if ((ws.storage === "gdrive" && tokenFor(ws.id)) || ws.storage === "folder") syncWs(ws.id); });
 
   // switching = the person chose Switch account; otherwise only the linked account is accepted.
   function connectGoogle(id, switching = false) {
@@ -527,6 +558,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
           return;
         }
         if (ws.email !== me.email) ws.fileId = null; // another account keeps its own file
+        if (ws.storage === "folder") { forgetFile(id); ws.folder = ""; }
         ws.email = me.email;
         ws.storage = "gdrive";
         saveSpaces();
@@ -538,15 +570,71 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     client.requestAccessToken();
   }
 
-  function useDeviceOnly(id) {
+  function useDeviceOnly(id, quiet = false) {
     const ws = wsById(id);
     const tok = tokenFor(id);
     if (tok && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(tok, () => {});
     LS.set(K.token(id), null);
-    ws.storage = "local"; ws.email = ""; ws.fileId = null;
+    const was = ws.storage === "folder" ? `The file “${ws.folder}”` : "The file in Google Drive";
+    forgetFile(id);
+    ws.storage = "local"; ws.email = ""; ws.fileId = null; ws.folder = "";
     saveSpaces();
-    toast(`${ws.name} is now saved on this device only. The file in Google Drive stays where it is.`, null);
+    if (!quiet) toast(`${ws.name} is now saved on this device only. ${was} stays where it is.`, null);
     render();
+  }
+
+  // ---------- file on this computer (Chrome and Edge) ----------
+  // The file can sit in Dropbox, OneDrive or iCloud Drive, so other computers can open the same one.
+  const canFile = "showOpenFilePicker" in window && window.isSecureContext;
+  const JSON_TYPES = [{ description: "Daily Task Line file", accept: { "application/json": [".json"] } }];
+  function idb(mode, fn) {
+    return new Promise((resolve, reject) => {
+      const open = indexedDB.open("dtl", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("handles");
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const tx = open.result.transaction("handles", mode), req = fn(tx.objectStore("handles"));
+        tx.oncomplete = () => { open.result.close(); resolve(req.result); };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }
+  const files = {}; // ws id -> file handle, kept in IndexedDB because localStorage can't hold it
+  async function fileOf(id) {
+    if (!(id in files)) { try { files[id] = (await idb("readonly", (s) => s.get(id))) || null; } catch (e) { files[id] = null; } }
+    return files[id];
+  }
+  function forgetFile(id) { if (files[id] || !(id in files)) { files[id] = null; idb("readwrite", (s) => s.delete(id)).catch(() => {}); } }
+  // Browsers ask again after a restart; asking needs a click, so background syncs only check.
+  async function fileAllowed(fh, ask) {
+    const opts = { mode: "readwrite" };
+    if ((await fh.queryPermission(opts)) === "granted") return true;
+    return ask && (await fh.requestPermission(opts)) === "granted";
+  }
+  // create = make a new file; otherwise open one that already exists (tasks in it are merged with these)
+  async function connectFile(id, create = false) {
+    const ws = wsById(id);
+    let fh;
+    try {
+      fh = create
+        ? await window.showSaveFilePicker({ id: "dtl-file", suggestedName: driveName(ws), types: JSON_TYPES })
+        : (await window.showOpenFilePicker({ id: "dtl-file", types: JSON_TYPES, multiple: false }))[0];
+    } catch (e) { if (e.name !== "AbortError") toast("Couldn't open that file. Choose another one.", null); return; }
+    if (!(await fileAllowed(fh, true))) { toast("The app needs permission to save in that file.", null); return; }
+    try { await fileIO(fh).read(); } catch (e) { toast((e.message || "That file can't be read") + ". Choose another one.", null); return; }
+    if (ws.storage === "gdrive") useDeviceOnly(id, true);
+    files[id] = fh;
+    try { await idb("readwrite", (s) => s.put(fh, id)); } catch (e) {}
+    ws.storage = "folder"; ws.folder = fh.name; ws.email = ""; ws.fileId = null;
+    saveSpaces();
+    toast(`${ws.name} is now saved in the file “${fh.name}”.`, null);
+    syncWs(id);
+  }
+  async function allowFile(id) {
+    const fh = await fileOf(id);
+    if (!fh) { connectFile(id); return; }
+    try { if (await fileAllowed(fh, true)) { st(id).status = ""; syncWs(id); return; } } catch (e) {}
+    toast("Without permission the app can't save in that file. Changes are kept on this device.", null);
   }
 
   async function renameRemote(ws) {
@@ -744,7 +832,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     });
     if (made.length) d.tasks = d.tasks.concat(made);
     if (made.length || touched) saveData(ws);
-    if (made.length && wsById(ws)?.storage === "gdrive") scheduleSync(ws);
+    if (made.length && synced(ws)) scheduleSync(ws);
     return made.length;
   }
   const generateAll = () => spaces.forEach((ws) => generateDue(ws.id));
@@ -782,9 +870,19 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   function renderSync() {
     const ws = wsById(activeWs);
     const el = $("sync");
+    if (ws.storage === "folder") {
+      const s = st(activeWs), where = `File “${esc(ws.folder || "")}”`;
+      const saved = data[activeWs].syncedAt ? "Saved " + new Date(data[activeWs].syncedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "Not saved there yet";
+      el.className = "sync " + (s.status || "ok");
+      if (s.status === "auth") el.innerHTML = `<span class="dot"></span><span>${where} · Allow access again to keep saving there. Changes are kept on this device until then.</span><button type="button" class="btn" data-file-allow>Allow access</button>`;
+      else if (s.status === "error") el.innerHTML = `<span class="dot"></span><span>Couldn't save to ${where} (${esc(s.msg)}). Changes are kept on this device.</span><button type="button" class="btn" data-sync-now>Try again</button><button type="button" class="linkbtn" data-file-open>Choose the file</button>`;
+      else if (s.status === "busy") el.innerHTML = `<span class="dot"></span><span>${where} · Saving…</span>`;
+      else el.innerHTML = `<span class="dot"></span><span>${where} · ${saved}</span>`;
+      return;
+    }
     if (ws.storage !== "gdrive") {
       el.className = "sync";
-      el.innerHTML = `<span class="dot"></span><span>Saved on this device only.</span><button type="button" class="linkbtn" data-connect>Sync with Google Drive</button>`;
+      el.innerHTML = `<span class="dot"></span><span>Saved on this device only.</span><button type="button" class="linkbtn" data-connect>Sync with Google Drive</button>${canFile ? `<button type="button" class="linkbtn" data-file-open>Use a file on this computer</button>` : ""}`;
       return;
     }
     const s = st(activeWs);
@@ -804,24 +902,29 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
     if (!settingsOpen) return;
     const ws = wsById(activeWs);
     const count = live().length;
-    const isDrive = ws.storage === "gdrive";
+    const isDrive = ws.storage === "gdrive", isFolder = ws.storage === "folder";
     el.innerHTML = `
       <h2>${esc(ws.name)} settings</h2>
       <form class="row" id="renameForm"><input type="text" id="setName" value="${esc(ws.name)}" aria-label="Workspace name"><button class="btn ghost" type="submit">Rename</button></form>
       <div class="field"><span class="label">Where tasks are saved</span>
         <div class="choice">
-          <label><input type="radio" name="storage" id="stLocal" value="local"${isDrive ? "" : " checked"}><span>This device only<small>Works offline. Other devices can't see these tasks.</small></span></label>
+          <label><input type="radio" name="storage" id="stLocal" value="local"${isDrive || isFolder ? "" : " checked"}><span>This device only<small>Works offline. Other devices can't see these tasks.</small></span></label>
           <label><input type="radio" name="storage" id="stDrive" value="gdrive"${isDrive ? " checked" : ""}><span>Google Drive${isDrive && ws.email ? ` · ${esc(ws.email)}` : ""}<small>Pick the Google account for this workspace. Open the app on any device and connect the same account to see these tasks.</small></span></label>
+          <label${canFile ? "" : ` class="off"`}><input type="radio" name="storage" id="stFolder" value="folder"${isFolder ? " checked" : ""}${canFile ? "" : " disabled"}><span>File on this computer${isFolder && ws.folder ? ` · ${esc(ws.folder)}` : ""}<small>${canFile
+            ? "Choose your .json file, for example in Dropbox, OneDrive or iCloud Drive. Other computers can open the same file."
+            : "Works in Chrome or Edge on a computer."}</small></span></label>
         </div>
       </div>
       ${isDrive ? `<p class="hint">Saved as “${esc(driveName(ws))}” in that account's Google Drive. <button type="button" class="linkbtn" data-connect>Switch account</button></p>` : ""}
+      ${isFolder ? `<p class="hint">Saved in the file “${esc(ws.folder || "")}” on this computer. <button type="button" class="linkbtn" data-file-open>Choose another file</button></p>` : ""}
+      ${canFile ? `<p class="hint">No file yet? <button type="button" class="linkbtn" data-file-new>Create a new file</button></p>` : ""}
       <div class="row">${ws.id === defaultWs ? `<span class="hint">This workspace opens first.</span>` : `<button class="btn ghost" type="button" data-ws-default>Open this workspace first</button>`}</div>
       <div class="danger-zone">
         <button class="btn ghost" type="button" data-ws-delete ${spaces.length < 2 ? "disabled" : ""}>Remove workspace</button>
         <button class="btn" type="button" data-settings-close>Done</button>
       </div>
-      <p class="hint" id="deleteHint" hidden>${isDrive
-        ? `Removes ${esc(ws.name)} from this device. The file in Google Drive and its ${count} tasks stay. Click again to confirm.`
+      <p class="hint" id="deleteHint" hidden>${isDrive || isFolder
+        ? `Removes ${esc(ws.name)} from this device. The file in ${isDrive ? "Google Drive" : "“" + esc(ws.folder || "") + "”"} and its ${count} tasks stay. Click again to confirm.`
         : `Deletes ${esc(ws.name)} and its ${count} tasks from this device. Click again to confirm.`}</p>`;
   }
 
@@ -1458,6 +1561,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   $("sync").addEventListener("click", (e) => {
     if (e.target.closest("[data-connect]")) connectGoogle(activeWs);
     if (e.target.closest("[data-sync-now]")) syncWs(activeWs);
+    if (e.target.closest("[data-file-open]")) connectFile(activeWs);
+    if (e.target.closest("[data-file-allow]")) allowFile(activeWs);
   });
 
   $("settings").addEventListener("submit", async (e) => {
@@ -1474,11 +1579,15 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   $("settings").addEventListener("change", (e) => {
     if (e.target.name !== "storage") return;
     const ws = wsById(activeWs);
-    if (e.target.value === "gdrive" && ws.storage !== "gdrive") { e.target.checked = false; $("stLocal").checked = true; connectGoogle(activeWs); }
-    if (e.target.value === "local" && ws.storage === "gdrive") useDeviceOnly(activeWs);
+    const keep = () => { e.target.checked = false; $({ local: "stLocal", gdrive: "stDrive", folder: "stFolder" }[ws.storage] || "stLocal").checked = true; };
+    if (e.target.value === "gdrive" && ws.storage !== "gdrive") { keep(); connectGoogle(activeWs); }
+    if (e.target.value === "folder" && ws.storage !== "folder") { keep(); connectFile(activeWs); }
+    if (e.target.value === "local" && ws.storage !== "local") useDeviceOnly(activeWs);
   });
   $("settings").addEventListener("click", (e) => {
     if (e.target.closest("[data-connect]")) { connectGoogle(activeWs, true); return; }
+    if (e.target.closest("[data-file-open]")) { connectFile(activeWs); return; }
+    if (e.target.closest("[data-file-new]")) { connectFile(activeWs, true); return; }
     if (e.target.closest("[data-settings-close]")) { settingsOpen = false; render(); return; }
     if (e.target.closest("[data-ws-default]")) { defaultWs = activeWs; saveSpaces(); render(); return; }
     const del = e.target.closest("[data-ws-delete]");
@@ -1489,7 +1598,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
         return;
       }
       const id = activeWs;
-      LS.set(K.data(id), null); LS.set(K.token(id), null);
+      LS.set(K.data(id), null); LS.set(K.token(id), null); forgetFile(id);
       spaces = spaces.filter((s) => s.id !== id);
       delete data[id];
       defaultWs = resolveDefault(defaultWs);

@@ -58,6 +58,16 @@ Kiekvienas workspace Drive'e turi savo failą, pvz., `Daily Task Line – Person
 
 **Naujame įrenginyje:** atidarykite programėlę, pasirinkite skirtuką ir spauskite **Sync with Google Drive** su ta pačia paskyra. Užduotys atsiras. Workspace'ą, kurį sukūrėte patys, pirma sukurkite tokiu pačiu pavadinimu, tada prijunkite: failas susiejamas pagal workspace'o pavadinimą.
 
+## 5. Arba saugokite faile savo kompiuteryje
+
+Kompiuteryje (Chrome arba Edge) workspace'ą galima saugoti savo `.json` faile: **Settings → File on this computer** arba viršuje **Use a file on this computer**, tada pasirinkite failą. Jei failo dar nėra, spauskite **Create a new file**.
+
+- Tinka failas, kurį programėlė sukūrė anksčiau, pvz., iš Google Drive atsisiųstas `Daily Task Line – Personal.json`. Jo užduotys sujungiamos su esamomis.
+- Kitokio JSON failo programėlė neprijungs ir nepakeis.
+- Laikykite failą Dropbox, OneDrive ar iCloud Drive aplanke, ir kitame kompiuteryje galėsite pasirinkti tą patį failą.
+- Iš naujo paleidus naršyklę, ji gali paprašyti leidimo dar kartą. Viršuje paspauskite **Allow access**. Iki tol pakeitimai saugomi įrenginyje.
+- Telefone ir Safari ši galimybė neveikia. Ten naudokite Google Drive.
+
 ## Ką verta žinoti
 
 - **Prisijungimas galioja apie valandą.** Po to viršuje atsiras **Reconnect**: vienas paspaudimas. Pakeitimai per tą laiką neprarandami, jie išsisaugo įrenginyje ir nusiunčiami prisijungus.
